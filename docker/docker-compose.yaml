@@ -1,0 +1,59 @@
+name: befit
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: prod
+    environment:
+      PROJECT_NAME: ${PROJECT_NAME:-befit}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-befit}
+      DB_USER: ${DB_USER:-befit}
+      DB_PASSWORD: ${DB_PASSWORD:-befit}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-befit}
+      POSTGRES_USER: ${DB_USER:-befit}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-befit}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Auto-run on FIRST init only (empty data dir); alphabetical order.
+      # For an existing volume use `make db-init`.
+      - ../scripts/database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-befit} -d ${DB_NAME:-befit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

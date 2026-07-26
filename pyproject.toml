@@ -6,5 +6,49 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.140.0",
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy[asyncio]>=2.0.51",
+    "uvicorn[standard]>=0.34.0",
+    "asyncpg>=0.30.0",
+    "pydantic-settings>=2.7.0",
+    "redis>=5.2.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "httpx>=0.28.0",
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+src = ["app", "tests"]
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade — enforces X | None, list[X], etc.
+    "B",      # bugbear
+    "ASYNC",  # blocking calls inside async def
+    "C4",     # comprehensions
+    "SIM",    # simplify
+    "RUF",
+]
+ignore = [
+    "B008",  # Depends()/Query() in defaults is the FastAPI idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+docstring-code-format = true
