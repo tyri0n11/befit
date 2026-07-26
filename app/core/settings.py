@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "FastAPI Project"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
+    # Level for the `app` logger; see app/core/logging.py.
+    LOG_LEVEL: str = "INFO"
 
     # Database settings
     DB_HOST: str = "localhost"
@@ -25,9 +27,32 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
 
     # Security settings
-    SECRET_KEY: str = "your-secret-key"
+    # 32 bytes is the floor RFC 7518 §3.2 sets for an HMAC-SHA256 key; PyJWT
+    # warns below it. Generate one with `openssl rand -hex 32`.
+    SECRET_KEY: str = Field(min_length=32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 1440
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Email (Resend). With RESEND_API_KEY empty, outgoing mail is logged instead
+    # of sent — see app/services/email.py.
+    RESEND_API_KEY: str = ""
+    RESEND_API_URL: str = "https://api.resend.com/emails"
+    EMAIL_FROM: str = "befit <onboarding@resend.dev>"
+    PASSWORD_RESET_URL: str = "http://localhost:8000/reset-password"
+
+    # Google OAuth (authorization code flow). Redirect URI must match the one
+    # registered in the Google Cloud console exactly, scheme and path included.
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    # How long the browser has to complete consent before the state expires.
+    OAUTH_STATE_TTL_SECONDS: int = 600
+
+    @computed_field
+    @property
+    def GOOGLE_OAUTH_CONFIGURED(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
 
     @computed_field
     @property

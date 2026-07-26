@@ -24,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db, db_lifespan
+from app.core.logging import configure_logging
 
 DATA_DIR = Path(__file__).parent / "data"
 MAX_DEPTH = 2
@@ -527,6 +528,7 @@ async def run(args: argparse.Namespace) -> Stats:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_logging()
     args = parse_args(argv)
     try:
         stats = asyncio.run(run(args))

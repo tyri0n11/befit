@@ -105,10 +105,42 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- -------------------------------------------------------------
+-- password_reset_tokens — single-use, short-lived
+--
+-- Only the SHA-256 of the token is stored. A leaked dump therefore
+-- cannot be used to reset anyone's password. The token itself is
+-- high-entropy random, so a plain digest is enough — bcrypt would
+-- only add cost without adding security here.
+-- -------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id         SERIAL PRIMARY KEY,
+    user_id    INTEGER NOT NULL
+               REFERENCES users (id) ON DELETE CASCADE,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at    TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_reset_expires_after_created
+        CHECK (expires_at > created_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_user
+    ON password_reset_tokens (user_id);
+
+-- -------------------------------------------------------------
 -- Timestamp backfill — patches databases created before every
 -- table carried both created_at and updated_at. No-op on a fresh
 -- database, where the columns above already exist.
 -- -------------------------------------------------------------
+
+-- Bumped whenever credentials change; JWTs carry the value they were
+-- issued with, so raising it invalidates every outstanding access and
+-- refresh token for that user. This is the only revocation mechanism —
+-- the tokens themselves are stateless.
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE user_auth
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();

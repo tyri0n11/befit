@@ -111,6 +111,8 @@ Comments and docs:
 
 `app/core/database.py` owns a singleton `Database` — one engine, therefore one
 connection pool, per process. Never call `create_async_engine` anywhere else.
+`app/core/redis.py` mirrors it for Redis (`cache`, `redis_lifespan`, `get_redis`);
+both are entered from the FastAPI lifespan.
 
 - `db_lifespan()` is wired into the FastAPI lifespan; it connects on startup and
   disposes the pool on shutdown.
@@ -121,6 +123,17 @@ connection pool, per process. Never call `create_async_engine` anywhere else.
   means something is running outside the lifespan.
 
 ## Schema and models
+
+`Base` sets `type_annotation_map = {datetime: DateTime(timezone=True)}`. Without it
+SQLAlchemy maps a bare `datetime` annotation to `TIMESTAMP WITHOUT TIME ZONE` while
+every SQL column is `TIMESTAMPTZ`, and writing an aware datetime fails with
+*"can't subtract offset-naive and offset-aware datetimes"* from asyncpg. Declare
+timestamps as plain `Mapped[datetime]` and let the map handle it.
+
+Postgres owns the enum types, so models must not emit `CREATE TYPE`. Use the
+`_pg_enum()` helper in `app/models/user.py`: it sets `create_type=False` and
+`values_callable` so the label (`active`) is stored rather than the member name
+(`ACTIVE`).
 
 `BaseModel` (`app/models/base.py`) is abstract and supplies only `created_at` and
 `updated_at`. It deliberately carries **no `id`** — each model declares its own
@@ -180,6 +193,125 @@ loads it. Edit the YAML, never `INSERT` master data by hand.
 - CLI scripts pass `db_lifespan(echo=False)`. Without it SQLAlchemy's dev-mode
   `echo` drowns the output in generated SQL.
 
+## Authentication
+
+Local email/password only. `POST /api/v1/auth/{register,login,refresh}` and
+`GET /api/v1/auth/me`. Depend on `CurrentUser` (`app/api/v1/dependencies.py`) to
+require a caller.
+
+- `SECRET_KEY` must be at least 32 chars — RFC 7518 §3.2's floor for HMAC-SHA256,
+  and PyJWT warns below it. `Settings` enforces it and the compose file uses
+  `${SECRET_KEY:?...}` so a missing value fails loudly instead of booting on a
+  shared default. Generate with `openssl rand -hex 32`.
+- Access and refresh tokens carry a `type` claim, and `decode_token` requires the
+  expected one. This is what stops a long-lived refresh token being replayed as a
+  bearer token.
+- Login returns the same error for an unknown email and a wrong password, and
+  `AuthErrorCode.INVALID_TOKEN` always renders the same generic message. Keep it
+  that way: distinct errors let a caller enumerate registered accounts.
+- Passwords are capped at 72 bytes because bcrypt silently truncates there —
+  `hash_password` raises and the schema rejects it rather than letting a long
+  password become equivalent to its prefix.
+- Suspended accounts are rejected *after* the password check, so account status is
+  not probeable without valid credentials.
+- Tokens are stateless, so `users.token_version` is the only revocation lever.
+  Every JWT carries the version it was signed with (`ver`) and `_active_user_for`
+  refuses a mismatch. Bump the column to invalidate every outstanding token for a
+  user — a password reset does exactly this. There is still no per-device logout.
+### Google OAuth
+
+Authorization code flow, server-side: `GET /auth/google/login` (307 to Google) →
+`GET /auth/google/callback` → our own `TokenPair`. `app/services/google_oauth.py`.
+
+Two invariants that are easy to break:
+
+- **`state` is single-use.** It lives in Redis and is *deleted* when consumed, so a
+  captured callback URL cannot be replayed. A signed stateless value would not do:
+  verification is repeatable, consumption is not. PKCE (`S256`) is sent too, and the
+  verifier is stored alongside the state.
+- **`id_token` is verified, never trusted.** Signature checked against Google's
+  JWKS, `aud` must equal `GOOGLE_CLIENT_ID`, `iss` must be Google. Dropping the
+  `aud` check would let an id_token minted for a *different* app log someone in.
+
+Account linking: a Google identity whose email matches an existing local account is
+linked to it — a second `user_auth` row, so both login methods work
+(`uq_user_provider` allows one row per provider per user). **This only happens when
+Google asserts `email_verified`**; otherwise anyone could register a Google account
+claiming someone else's address and take over their local account. Linking or
+creating via Google also sets `users.email_verified`, since Google has proved it.
+
+`GOOGLE_REDIRECT_URI` must match the console registration exactly. A mismatch shows
+up as `redirect_uri_mismatch` in the token-exchange error log, not at redirect time.
+With the credentials empty, `/auth/google/login` returns 503 rather than failing
+obscurely.
+
+The callback returns tokens as JSON. A browser-facing frontend will want a redirect
+carrying them instead — that is a deliberate omission, not an oversight.
+
+### Password reset
+
+`POST /auth/password-reset/request` (always 202) → email →
+`POST /auth/password-reset/confirm` (204).
+
+- Tokens live in `password_reset_tokens`, and **only their SHA-256 is stored**. A
+  plain digest is right here: the token is 32 bytes of `secrets.token_urlsafe`
+  entropy, so unlike a password there is nothing for a slow KDF to protect.
+- Single-use. `used_at` is stamped on confirm, and requesting a new link spends any
+  outstanding one, so only the newest link works.
+- Confirming bumps `token_version`, which revokes existing access and refresh
+  tokens. Without this a stolen refresh token would survive the victim's reset,
+  which defeats the point of resetting.
+- `request` returns 202 for unknown addresses, google-only accounts, and inactive
+  users alike, and a Resend delivery failure is logged rather than raised. Any of
+  those turning into a different response would enumerate accounts.
+
+### Email
+
+`app/services/email.py`. Resend over its **HTTP API**, not SMTP: k3s egress on
+25/587 is commonly blocked or provider-rate-limited, and an HTTP call is far easier
+to debug from a container.
+
+Do **not** switch to the official `resend` package — it is synchronous only, so it
+would block the event loop. `httpx.AsyncClient` posts the same REST payload the SDK
+wraps. If the SDK is ever needed, wrap it in `anyio.to_thread.run_sync`.
+
+**Password reset is the only email the app sends.** `register` sends nothing and
+`users.email_verified` is never set to true — email verification is not implemented,
+so that column is currently decorative.
+
+Sends are logged at INFO on success and ERROR on rejection. Both matter: the endpoint
+returns 202 either way, so the log is the only place a delivery failure or success is
+visible. `app/core/logging.py` attaches the handler — uvicorn configures only its own
+loggers and leaves root at WARNING, so without it every `logger.info()` in
+application code is dropped and a send looks like it never happened.
+
+The sending domain must be verified in Resend, and it is the *exact* domain that
+counts: `support.tyr1on.io.vn` being verified does not make `tyr1on.io.vn` work. An
+unverified sender returns 403, which only shows up in the log.
+
+`EMAIL_FROM` is the complete From value including the display name. Do not wrap it
+again in code — `Name <<addr>>` is rejected.
+
+With `RESEND_API_KEY` empty the console backend logs the link instead of sending,
+so local dev needs no credentials and no network; `get_email_sender` logs an error
+if the key is missing outside development. Tests override the `get_email_sender`
+dependency with `RecordingEmailSender` — the suite must never reach the real API.
+
+## Testing
+
+`make test` runs pytest in the api container; `uv run pytest` runs it on the host.
+Either way a live database is required.
+
+Every test runs inside a transaction that `tests/conftest.py` rolls back, so the
+suite writes nothing. It overrides the `get_db` dependency with a session bound to
+that outer transaction, which is why services must flush rather than commit — a
+commit in the service layer would defeat this and leak rows into the dev database.
+
+`asyncio_default_test_loop_scope` and `..._fixture_loop_scope` are both `session`
+in `pyproject.toml`. asyncpg connections are pinned to the loop that opened them,
+so a per-test loop breaks the shared engine pool with *"attached to a different
+loop"*.
+
 ## Open decisions
 
 Not settled yet — ask before assuming:
@@ -189,6 +321,6 @@ Not settled yet — ask before assuming:
 - Ruff runs only via `make lint`; there is no pre-commit hook or CI gate enforcing it.
 - No migration tool. `migrations/` is empty and `scripts/database/` does the work,
   which cannot express destructive changes.
-- `app/api/v1/api.py`, `app/services/healthcheck.py`, `app/utils/security.py` are
-  empty placeholders. The router is not mounted in `app/main.py` yet, and
-  `settings.API_V1_STR` is unused.
+- `app/services/healthcheck.py` is still an empty placeholder.
+- CORS in `app/main.py` is wide open (`allow_origins=["*"]`) — fine for local dev,
+  must be narrowed before any deployment.
