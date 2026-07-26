@@ -61,6 +61,14 @@ db-init: ## Re-run scripts/database/*.sql against the running dev database
 			psql -v ON_ERROR_STOP=1 -U $${DB_USER:-befit} -d $${DB_NAME:-befit} < "$$f"; \
 	done
 
+.PHONY: seed
+seed: .env ## Seed catalog master data from scripts/data/*.yaml
+	uv run python -m scripts.seed
+
+.PHONY: seed-dry
+seed-dry: .env ## Validate the seed data and roll the transaction back
+	uv run python -m scripts.seed --dry-run
+
 .PHONY: db-reset
 db-reset: ## Drop the postgres volume and recreate the schema from scratch
 	$(DC_DEV) rm -sfv postgres

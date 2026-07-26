@@ -1,0 +1,403 @@
+# Exercise catalog.
+#
+# pattern   -> movement_pattern enum
+# equipment -> equipment_type enum
+# force     -> force_type enum
+# muscles   -> exercise_muscles rows, keyed by muscle_role; values are
+#              muscle_groups.code and must refer to trackable (leaf) nodes.
+#
+# Every exercise needs at least one entry under `primary`. That rule lives here
+# and in scripts/seed.py, not in the database (see 02_init_catalog.sql).
+
+exercises:
+  # --- horizontal push -------------------------------------------------
+  - slug: barbell-bench-press
+    name_en: Barbell Bench Press
+    name_vi: Đẩy ngực thanh đòn
+    pattern: horizontal_push
+    equipment: barbell
+    force: push
+    default_rest_sec: 180
+    muscles:
+      primary: [chest_mid]
+      secondary: [tricep_lateral, delt_front]
+
+  - slug: incline-dumbbell-press
+    name_en: Incline Dumbbell Press
+    name_vi: Đẩy ngực trên với tạ đơn
+    pattern: horizontal_push
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 150
+    muscles:
+      primary: [chest_upper]
+      secondary: [tricep_lateral, delt_front]
+
+  - slug: push-up
+    name_en: Push-Up
+    name_vi: Hít đất
+    pattern: horizontal_push
+    equipment: bodyweight
+    force: push
+    default_rest_sec: 60
+    muscles:
+      primary: [chest_mid]
+      secondary: [tricep_lateral, delt_front]
+      stabilizer: [abs]
+
+  # --- vertical push ---------------------------------------------------
+  - slug: overhead-press
+    name_en: Overhead Press
+    name_vi: Đẩy vai qua đầu
+    pattern: vertical_push
+    equipment: barbell
+    force: push
+    default_rest_sec: 180
+    requires_overhead: true
+    muscles:
+      primary: [delt_front]
+      secondary: [tricep_lateral, delt_side]
+      stabilizer: [abs, erectors]
+
+  - slug: dumbbell-shoulder-press
+    name_en: Dumbbell Shoulder Press
+    name_vi: Đẩy vai với tạ đơn
+    pattern: vertical_push
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 150
+    requires_overhead: true
+    muscles:
+      primary: [delt_front]
+      secondary: [delt_side, tricep_lateral]
+      stabilizer: [abs]
+
+  - slug: dumbbell-lateral-raise
+    name_en: Dumbbell Lateral Raise
+    name_vi: Nâng tạ ngang vai
+    pattern: isolation
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 60
+    muscles:
+      primary: [delt_side]
+
+  # --- vertical pull ---------------------------------------------------
+  - slug: pull-up
+    name_en: Pull-Up
+    name_vi: Hít xà đơn
+    pattern: vertical_pull
+    equipment: bodyweight
+    force: pull
+    default_rest_sec: 150
+    requires_overhead: true
+    muscles:
+      primary: [lats]
+      secondary: [biceps, traps_mid, rhomboids]
+      stabilizer: [abs, forearms]
+
+  - slug: lat-pulldown
+    name_en: Lat Pulldown
+    name_vi: Kéo xô
+    pattern: vertical_pull
+    equipment: cable
+    force: pull
+    default_rest_sec: 120
+    muscles:
+      primary: [lats]
+      secondary: [biceps, rhomboids]
+
+  # --- horizontal pull -------------------------------------------------
+  - slug: barbell-row
+    name_en: Barbell Row
+    name_vi: Kéo tạ đòn
+    pattern: horizontal_pull
+    equipment: barbell
+    force: pull
+    default_rest_sec: 150
+    muscles:
+      primary: [lats, rhomboids]
+      secondary: [biceps, traps_mid, delt_rear]
+      stabilizer: [erectors]
+
+  - slug: barbell-pendlay-row
+    name_en: Barbell Pendlay Row
+    name_vi: Kéo tạ đòn kiểu Pendlay
+    pattern: horizontal_pull
+    equipment: barbell
+    force: pull
+    default_rest_sec: 150
+    notes: Bar is reset on the floor between every rep, so each rep starts dead.
+    muscles:
+      primary: [lats, rhomboids]
+      secondary: [traps_mid, biceps, delt_rear]
+      stabilizer: [erectors, forearms]
+
+  - slug: dumbbell-single-arm-row
+    name_en: Dumbbell Single-Arm Row
+    name_vi: Kéo tạ đơn một tay
+    pattern: horizontal_pull
+    equipment: dumbbell
+    force: pull
+    is_unilateral: true
+    default_rest_sec: 120
+    notes: Braced on a bench with one knee; worked one side at a time.
+    muscles:
+      primary: [lats]
+      secondary: [rhomboids, traps_mid, biceps]
+      stabilizer: [erectors, obliques, forearms]
+
+  - slug: seated-cable-row
+    name_en: Seated Cable Row
+    name_vi: Kéo cáp ngồi
+    pattern: horizontal_pull
+    equipment: cable
+    force: pull
+    default_rest_sec: 120
+    muscles:
+      primary: [rhomboids, traps_mid]
+      secondary: [lats, biceps]
+
+  - slug: face-pull
+    name_en: Face Pull
+    name_vi: Kéo cáp vào mặt
+    pattern: horizontal_pull
+    equipment: cable
+    force: pull
+    default_rest_sec: 60
+    muscles:
+      primary: [delt_rear]
+      secondary: [traps_mid, rhomboids]
+
+  # --- squat / hinge / lunge -------------------------------------------
+  - slug: back-squat
+    name_en: Back Squat
+    name_vi: Squat sau
+    pattern: squat
+    equipment: barbell
+    force: push
+    default_rest_sec: 210
+    muscles:
+      primary: [quads, glutes]
+      secondary: [hamstrings, adductors]
+      stabilizer: [erectors, abs]
+
+  - slug: front-squat
+    name_en: Front Squat
+    name_vi: Squat trước
+    pattern: squat
+    equipment: barbell
+    force: push
+    default_rest_sec: 210
+    notes: Bar racked on the front delts; more quad-dominant than the back squat.
+    muscles:
+      primary: [quads]
+      secondary: [glutes, adductors]
+      stabilizer: [abs, erectors, delt_front]
+
+  - slug: goblet-squat
+    name_en: Goblet Squat
+    name_vi: Squat cầm tạ trước ngực
+    pattern: squat
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 120
+    notes: Single dumbbell held at the chest.
+    muscles:
+      primary: [quads, glutes]
+      secondary: [adductors]
+      stabilizer: [abs, erectors]
+
+  - slug: leg-press
+    name_en: Leg Press
+    name_vi: Đạp chân
+    pattern: squat
+    equipment: machine
+    force: push
+    default_rest_sec: 150
+    muscles:
+      primary: [quads]
+      secondary: [glutes, hamstrings]
+
+  - slug: conventional-deadlift
+    name_en: Conventional Deadlift
+    name_vi: Deadlift truyền thống
+    pattern: hinge
+    equipment: barbell
+    force: pull
+    default_rest_sec: 240
+    muscles:
+      primary: [hamstrings, glutes, erectors]
+      secondary: [lats, traps_upper, quads]
+      stabilizer: [abs, forearms]
+
+  - slug: romanian-deadlift
+    name_en: Romanian Deadlift
+    name_vi: Deadlift kiểu Romania
+    pattern: hinge
+    equipment: barbell
+    force: pull
+    default_rest_sec: 180
+    muscles:
+      primary: [hamstrings]
+      secondary: [glutes, erectors]
+      stabilizer: [abs]
+
+  - slug: stiff-leg-deadlift
+    name_en: Stiff-Leg Deadlift
+    name_vi: Deadlift chân thẳng
+    pattern: hinge
+    equipment: barbell
+    force: pull
+    default_rest_sec: 180
+    notes: Straighter knees than a Romanian deadlift; longer hamstring stretch.
+    muscles:
+      primary: [hamstrings]
+      secondary: [glutes, erectors]
+      stabilizer: [abs, forearms]
+
+  - slug: dumbbell-bulgarian-split-squat
+    name_en: Dumbbell Bulgarian Split Squat
+    name_vi: Squat một chân kê sau
+    pattern: lunge
+    equipment: dumbbell
+    force: push
+    is_unilateral: true
+    default_rest_sec: 120
+    notes: Rear foot elevated on a bench.
+    muscles:
+      primary: [quads, glutes]
+      secondary: [hamstrings, adductors]
+      stabilizer: [abs, calves]
+
+  - slug: walking-lunge
+    name_en: Walking Lunge
+    name_vi: Lunge bước đi
+    pattern: lunge
+    equipment: dumbbell
+    force: push
+    is_unilateral: true
+    default_rest_sec: 120
+    muscles:
+      primary: [quads, glutes]
+      secondary: [hamstrings, adductors]
+      stabilizer: [abs, calves]
+
+  # --- isolation -------------------------------------------------------
+  - slug: barbell-curl
+    name_en: Barbell Curl
+    name_vi: Cuốn tay trước thanh đòn
+    pattern: isolation
+    equipment: barbell
+    force: pull
+    default_rest_sec: 75
+    muscles:
+      primary: [biceps]
+      secondary: [forearms]
+
+  - slug: triceps-rope-pushdown
+    name_en: Triceps Rope Pushdown
+    name_vi: Đẩy dây tay sau
+    pattern: isolation
+    equipment: cable
+    force: push
+    default_rest_sec: 60
+    muscles:
+      primary: [tricep_lateral]
+
+  - slug: dumbbell-skull-crusher
+    name_en: Dumbbell Skull Crusher
+    name_vi: Hạ tạ sau đầu khi nằm
+    pattern: isolation
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 75
+    notes: Lying, lowering behind the head — biases the long head.
+    muscles:
+      primary: [tricep_long]
+      secondary: [tricep_lateral]
+
+  - slug: dumbbell-overhead-tricep-extension
+    name_en: Dumbbell Overhead Triceps Extension
+    name_vi: Đẩy tạ qua đầu cho tay sau
+    pattern: isolation
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 75
+    requires_overhead: true
+    notes: Overhead position biases the long head but can strain the neck.
+    muscles:
+      primary: [tricep_long]
+      secondary: [tricep_lateral]
+      stabilizer: [abs]
+
+  - slug: dumbbell-chest-fly
+    name_en: Dumbbell Chest Fly
+    name_vi: Ép ngực với tạ đơn
+    pattern: isolation
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 75
+    muscles:
+      primary: [chest_mid]
+      secondary: [delt_front]
+
+  - slug: dumbbell-hammer-curl
+    name_en: Dumbbell Hammer Curl
+    name_vi: Cuốn tạ kiểu búa
+    pattern: isolation
+    equipment: dumbbell
+    force: pull
+    default_rest_sec: 60
+    notes: Neutral grip shifts load toward the brachialis and forearms.
+    muscles:
+      primary: [biceps]
+      secondary: [forearms]
+
+  - slug: standing-calf-raise
+    name_en: Standing Calf Raise
+    name_vi: Nâng bắp chân đứng
+    pattern: isolation
+    equipment: machine
+    force: push
+    default_rest_sec: 60
+    muscles:
+      primary: [calves]
+
+  # --- core / carry ----------------------------------------------------
+  - slug: plank
+    name_en: Plank
+    name_vi: Plank
+    pattern: core
+    equipment: bodyweight
+    force: static
+    default_rest_sec: 60
+    muscles:
+      primary: [abs]
+      secondary: [obliques]
+      stabilizer: [erectors]
+
+  - slug: hanging-leg-raise
+    name_en: Hanging Leg Raise
+    name_vi: Nâng chân treo người
+    pattern: core
+    equipment: bodyweight
+    force: pull
+    default_rest_sec: 75
+    requires_overhead: true
+    muscles:
+      primary: [abs]
+      secondary: [obliques]
+      stabilizer: [forearms]
+
+  - slug: farmer-walk
+    name_en: Farmer's Walk
+    name_vi: Đi bộ mang tạ
+    pattern: carry
+    equipment: dumbbell
+    force: static
+    default_rest_sec: 120
+    muscles:
+      primary: [forearms, traps_upper]
+      secondary: [abs, obliques]
+      stabilizer: [erectors, glutes]

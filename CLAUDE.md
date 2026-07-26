@@ -15,6 +15,8 @@ make logs       # tail api logs (SERVICE=postgres to pick another)
 make psql       # psql inside the postgres container
 make db-init    # re-run scripts/database/*.sql against the running DB
 make db-reset   # drop the postgres volume, rebuild schema from scratch
+make seed       # load catalog master data from scripts/data/*.yaml
+make seed-dry   # validate the seed data, roll the transaction back
 make lint       # ruff check + format --check, writes nothing
 make fmt        # ruff check --fix + format
 make test       # pytest inside the api container
@@ -134,6 +136,49 @@ yet, so nothing checks that the two agree — keep them in sync by hand.
 The "at least one primary muscle per exercise" rule is enforced in the service/seed
 layer, not the database (see the note atop `02_init_catalog.sql`). Every write path
 to `exercise_muscles` must go through that validation.
+
+## Seeding
+
+`scripts/data/*.yaml` is the source of truth for catalog master data; `scripts/seed.py`
+loads it. Edit the YAML, never `INSERT` master data by hand.
+
+- Run as a module from the project root — `uv run python -m scripts.seed` — so that
+  `app` resolves. `python scripts/seed.py` puts `scripts/` on `sys.path` instead and
+  fails to import `app`.
+- Upserts key on the natural keys (`muscle_groups.code`, `exercises.slug`), so
+  re-running is safe and YAML edits propagate to existing rows.
+- Both `exercise_muscles` and `muscle_groups` are synced declaratively: rows absent
+  from the YAML are pruned. Removing a muscle from an exercise removes the link;
+  removing a node from the tree deletes it. Muscle groups are pruned deepest-first
+  and after link pruning, because `parent_id` and `exercise_muscles.muscle_group_id`
+  are both `ON DELETE RESTRICT` — a node an exercise still maps to raises a
+  `ForeignKeyViolation` instead of being silently kept.
+- `muscle_groups.yaml` is a three-level tree; nesting maps to `parent_id` and `depth`
+  is derived from the nesting level, capped at 2 by `ck_depth_range`:
+
+  ```
+  depth 0  region   upper_body / lower_body / core
+  depth 1  group    chest, back, hips, thighs, abdominals, ...
+  depth 2  leaf     chest_upper, lats, quads, abs, ...
+  ```
+
+  Only leaves are trackable; regions and groups must set `is_trackable: false`
+  because `trg_exercise_muscles_leaf_only` rejects mapping an exercise to them.
+  Leaf codes are referenced by `exercises.yaml` — renaming one means updating every
+  exercise that maps to it.
+- Validation runs before any write and reports all failures at once: slug format,
+  unknown or non-trackable muscle codes, duplicate codes, a muscle listed under two
+  roles, and the ≥1-primary rule.
+- `pattern`, `equipment` and `force` are validated against `pg_enum`, so adding a
+  variant to `movement_pattern` / `equipment_type` / `force_type` in SQL needs no
+  Python change. `muscle_role` is the exception: `ROLES` in `scripts/seed.py` is the
+  set of YAML keys the parser accepts, so it must exist before a connection is open.
+  The script cross-checks `ROLES` against the live enum and aborts if they diverge —
+  adding a `muscle_role` variant in SQL therefore requires updating `ROLES` too.
+- `--dry-run` executes the full write path inside a transaction and rolls it back;
+  `--validate-only` never opens a connection.
+- CLI scripts pass `db_lifespan(echo=False)`. Without it SQLAlchemy's dev-mode
+  `echo` drowns the output in generated SQL.
 
 ## Open decisions
 

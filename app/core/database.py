@@ -43,14 +43,18 @@ class Database:
             raise RuntimeError("Database.connect() has not been called")
         return self._sessionmaker
 
-    def connect(self) -> None:
-        """Build the engine + session factory. Idempotent."""
+    def connect(self, *, echo: bool | None = None) -> None:
+        """Build the engine + session factory. Idempotent.
+
+        `echo` defaults to on in development; CLI scripts pass False so their
+        output stays readable.
+        """
         if self._engine is not None:
             return
 
         self._engine = create_async_engine(
             settings.DATABASE_URL,
-            echo=settings.ENVIRONMENT == "development",
+            echo=settings.ENVIRONMENT == "development" if echo is None else echo,
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
@@ -88,8 +92,8 @@ db = Database()
 
 
 @asynccontextmanager
-async def db_lifespan() -> AsyncIterator[None]:
-    db.connect()
+async def db_lifespan(*, echo: bool | None = None) -> AsyncIterator[None]:
+    db.connect(echo=echo)
     try:
         yield
     finally:
