@@ -131,7 +131,7 @@ every SQL column is `TIMESTAMPTZ`, and writing an aware datetime fails with
 timestamps as plain `Mapped[datetime]` and let the map handle it.
 
 Postgres owns the enum types, so models must not emit `CREATE TYPE`. Use the
-`_pg_enum()` helper in `app/models/user.py`: it sets `create_type=False` and
+`pg_enum()` helper in `app/models/base.py`: it sets `create_type=False` and
 `values_callable` so the label (`active`) is stored rather than the member name
 (`ACTIVE`).
 
@@ -149,6 +149,80 @@ yet, so nothing checks that the two agree — keep them in sync by hand.
 The "at least one primary muscle per exercise" rule is enforced in the service/seed
 layer, not the database (see the note atop `02_init_catalog.sql`). Every write path
 to `exercise_muscles` must go through that validation.
+
+## Catalog API
+
+Read-only master data: `GET /api/v1/exercises`, `/exercises/{slug}`,
+`/muscle-groups`, `/muscle-groups/tree`. **No authentication** — the catalog is
+reference data with no user scoping. Gate it by adding `CurrentUser` to the
+endpoints if that changes.
+
+There is deliberately no write path: `scripts/seed.py` owns the data, so an
+endpoint that inserted an exercise would be overwritten by the next `make seed`
+and could also bypass the ≥1-primary-muscle rule.
+
+- `/exercises` filters on `q` (name or slug, `ILIKE`), `pattern`, `equipment`,
+  `force`, `muscle` (a muscle group *code*), `role`, `is_unilateral`,
+  `requires_overhead`, with `limit`/`offset` and a `total`. The enum filters are
+  the model enums, so an unknown value is a 422 rather than an empty page.
+- The muscle filter is an `EXISTS` subquery, not a join. An exercise maps to
+  several muscles, so a join multiplies its rows and both `total` and `limit`
+  come out wrong. `tests/test_catalog.py` pins this.
+- `MuscleGroup` has no `parent`/`children` relationships. The tree is three
+  levels and a few dozen rows, so `CatalogService.muscle_group_tree` assembles it
+  in Python from one flat query ordered by `depth` — a self-referencing lazy
+  relationship would emit a load per node and raise under asyncio.
+
+### Caching
+
+Every catalog response is read through a Redis cache (`app/core/cache.py`,
+`CATALOG_CACHE_TTL_SECONDS`, default 1h). It is safe precisely *because* the
+catalog is read-only: nothing but a seed run can change an answer, so entries
+only expire — there is no per-write invalidation to get wrong.
+
+- What is cached is Pydantic JSON, never ORM objects, which is why
+  `CatalogService` returns schemas rather than models. Endpoints must not
+  `model_validate` the result again.
+- `scripts/seed.py` drops the whole `catalog:v1` namespace after a successful
+  run. A `--dry-run` returns before that point; without it a rolled-back seed
+  would evict a still-correct cache.
+- A Redis outage is a cache miss, not a 500 — `JsonCache` logs and falls through
+  to Postgres. Same for an entry whose shape no longer validates after a deploy.
+- List keys hash *every* filter field plus `limit`/`offset`, so two filter sets
+  can never share an entry. Adding a field to `ExerciseFilters` is picked up
+  automatically; reordering the dataclass changes every key, which is harmless
+  (they just miss once).
+- Set `CATALOG_CACHE_TTL_SECONDS=0` to bypass the cache entirely.
+
+## Workout sessions
+
+`/api/v1/sessions` — the logging API. Everything requires `CurrentUser` and is
+scoped to that user; `app/services/training.py`.
+
+- A session that belongs to someone else is a **404, not a 403**. Ownership is
+  part of the query (`TrainingRepository` joins back to `workout_sessions` for
+  nested rows), so it cannot be forgotten by a caller, and ids stay unprobeable.
+- `order_index` and `set_index` default to the next free slot; passing one that
+  is taken is a 409 rather than an `IntegrityError` from `uq_session_order` /
+  `uq_set_index`.
+- `POST /sessions` accepts nested `exercises`, so a whole planned day is one
+  call. Unknown `exercise_id`s are reported together in a single 422, the way
+  `scripts/seed.py` reports validation failures.
+- **Tonnage is never stored** — `SessionExercise.tonnage` computes it, doubling
+  the weight for a unilateral movement because the logged value is per side.
+  This mirrors the header comment of `03_init_training.sql`.
+- New rows set `exercises=[]` / `sets=[]` explicitly. Once a flush makes a row
+  persistent, an untouched collection counts as *unloaded*, and serialising the
+  response would emit a lazy load — `MissingGreenlet` under asyncio. For the
+  same reason `_new_session_exercise` assigns the `Exercise` object, not the id.
+- `get_session` re-reads with `populate_existing=True`. Without it a session
+  already in the identity map keeps the collections it had, so a set deleted
+  through its own endpoint would still appear under the session.
+- `update_session` re-reads after flushing because `updated_at` is an `onupdate`
+  server call and the flush leaves it expired.
+- Pydantic mirrors the SQL CHECKs (rpe 5–10, bodyweight 20–300, reps ≥ 1,
+  `target_reps_min <= target_reps_max`), so a bad payload is a 422 instead of a
+  500 from Postgres. Keep the two in sync when a constraint changes.
 
 ## Seeding
 

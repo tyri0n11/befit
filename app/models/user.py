@@ -1,11 +1,11 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, BaseModel
+from app.models.base import Base, BaseModel, pg_enum
 
 
 class UserStatus(enum.StrEnum):
@@ -19,19 +19,6 @@ class AuthProvider(enum.StrEnum):
     LOCAL = "local"
 
 
-# The enum types are created by scripts/database/01_init_user.sql, so SQLAlchemy
-# must not try to emit CREATE TYPE. `values_callable` stores the label
-# ('active') rather than the member name ('ACTIVE').
-def _pg_enum(python_enum: type[enum.Enum], name: str) -> Enum:
-    return Enum(
-        python_enum,
-        name=name,
-        create_type=False,
-        native_enum=True,
-        values_callable=lambda e: [member.value for member in e],
-    )
-
-
 class User(BaseModel):
     __tablename__ = "users"
 
@@ -39,7 +26,7 @@ class User(BaseModel):
     email: Mapped[str] = mapped_column(CITEXT, unique=True)
     display_name: Mapped[str] = mapped_column(String(64))
     status: Mapped[UserStatus] = mapped_column(
-        _pg_enum(UserStatus, "user_status"), default=UserStatus.ACTIVE
+        pg_enum(UserStatus, "user_status"), default=UserStatus.ACTIVE
     )
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     # Bumped on credential changes; issued tokens carry the value they were
@@ -62,7 +49,7 @@ class UserAuth(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     provider: Mapped[AuthProvider] = mapped_column(
-        _pg_enum(AuthProvider, "auth_provider")
+        pg_enum(AuthProvider, "auth_provider")
     )
     provider_user_id: Mapped[str | None] = mapped_column(String(255), default=None)
     password_hash: Mapped[str | None] = mapped_column(String(255), default=None)

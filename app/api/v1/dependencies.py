@@ -2,14 +2,31 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.redis import get_redis
 from app.models.user import User
 from app.services.auth import AuthError, AuthService
+from app.services.catalog import CatalogService, catalog_cache
 from app.services.email import EmailSender, get_email_sender
+from app.services.training import TrainingService
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_catalog_service(
+    session: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> CatalogService:
+    return CatalogService(session, catalog_cache(redis))
+
+
+def get_training_service(
+    session: AsyncSession = Depends(get_db),
+) -> TrainingService:
+    return TrainingService(session)
 
 
 def get_auth_service(

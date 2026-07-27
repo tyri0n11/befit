@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db, db_lifespan
 from app.core.logging import configure_logging
+from app.core.redis import cache, redis_lifespan
+from app.services.catalog import catalog_cache
 
 DATA_DIR = Path(__file__).parent / "data"
 MAX_DEPTH = 2
@@ -523,6 +525,13 @@ async def run(args: argparse.Namespace) -> Stats:
                     raise _Rollback
         except _Rollback:
             print("dry run — transaction rolled back, nothing persisted")
+            return stats
+
+    # The catalog cache keys on nothing but the query, because master data only
+    # ever changes here. Dropping the namespace is therefore the invalidation.
+    async with redis_lifespan():
+        dropped = await catalog_cache(cache.client).invalidate()
+        print(f"catalog cache: {dropped} keys dropped")
 
     return stats
 

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Redis settings
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    # Catalog responses are master data written only by scripts/seed.py, so they
+    # can be cached hard. Set to 0 to bypass the cache entirely.
+    CATALOG_CACHE_TTL_SECONDS: int = 3600
 
     # Security settings
     # 32 bytes is the floor RFC 7518 §3.2 sets for an HMAC-SHA256 key; PyJWT
