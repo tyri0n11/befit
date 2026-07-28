@@ -346,7 +346,7 @@ class TestPasswordReset:
 
 class TestGoogleOAuth:
     async def test_login_redirect_requires_configuration(
-        self, client: AsyncClient
+        self, client: AsyncClient, google_unconfigured: None
     ) -> None:
         """With no client id/secret the endpoint must say so, not 500."""
         response = await client.get(BASE + "/google/login", follow_redirects=False)

@@ -11,6 +11,7 @@ from app.models.user import User
 from app.services.auth import AuthError, AuthService
 from app.services.catalog import CatalogService, catalog_cache
 from app.services.email import EmailSender, get_email_sender
+from app.services.stats import StatsService
 from app.services.training import TrainingService
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -27,6 +28,12 @@ def get_training_service(
     session: AsyncSession = Depends(get_db),
 ) -> TrainingService:
     return TrainingService(session)
+
+
+def get_stats_service(
+    session: AsyncSession = Depends(get_db),
+) -> StatsService:
+    return StatsService(session)
 
 
 def get_auth_service(

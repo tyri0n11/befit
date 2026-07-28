@@ -22,6 +22,16 @@ class ExerciseStatus(enum.StrEnum):
     SKIPPED = "skipped"
 
 
+class Bucket(enum.StrEnum):
+    """Granularity of a volume series. Not a database type — it lives here
+    because the repository, the service and the schemas all need it, and models
+    is the layer they may all import."""
+
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+
+
 class WorkoutSession(BaseModel):
     """One training day for one user."""
 

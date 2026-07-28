@@ -95,6 +95,15 @@ def google_configured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest_asyncio.fixture
+def google_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force the credentials empty. Not the same as leaving them alone: a
+    developer with real values in `.env` would otherwise see the endpoint
+    redirect and the "not configured" test fail for no fault of the code."""
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+
+
+@pytest_asyncio.fixture
 async def client(
     session: AsyncSession,
     mailer: RecordingEmailSender,

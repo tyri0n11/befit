@@ -224,6 +224,34 @@ scoped to that user; `app/services/training.py`.
   `target_reps_min <= target_reps_max`), so a bad payload is a 422 instead of a
   500 from Postgres. Keep the two in sync when a constraint changes.
 
+## Volume views
+
+`/api/v1/stats/{volume,muscles,exercises}` — read-only aggregates over the
+caller's logged sets. `app/repositories/stats.py`.
+
+- **Every number is computed by Postgres.** A year of training is tens of
+  thousands of `set_logs` rows; summing them in the service would mean loading
+  all of them. Nothing in this path pulls ORM objects.
+- The queries are driven **from `set_logs`**, so planned-but-unlogged work never
+  counts — a row exists only for a set that was performed.
+- Tonnage repeats the `03_init_training.sql` rule in SQL (`weight_kg * sides *
+  reps`, `sides = 2` when unilateral). A bodyweight set has a NULL weight and
+  contributes 0, which is why every response carries `reps` next to `tonnage` —
+  reading tonnage alone makes calisthenics look like a rest day.
+- The window is a preset `Period` (`1w`, `2w`, `4w`, `1m`, `3m`, `6m`, `1y`)
+  counted back from today, or explicit `date_from`/`date_to`. Explicit dates
+  win; `period` only fills a missing start. Month arithmetic clamps
+  (31 Mar − 1 month = 28 Feb), so no dateutil dependency.
+- Empty buckets are **zero-filled in the service**, not skipped: a chart that
+  closes the gap turns a deload into continuous training. Bucket starts match
+  `date_trunc` — Monday for weeks, the 1st for months — so the first and last
+  bucket may reach slightly outside the window.
+- **`/stats/muscles` totals do not sum to the range total, on purpose.** A bench
+  press counts for chest *and* triceps. It answers "how much did this muscle
+  get", not "how was the session split"; `tests/test_stats.py` pins this so
+  nobody 'fixes' it into a split. Defaults to `role=primary`; pass `role=all`
+  for every mapping.
+
 ## Seeding
 
 `scripts/data/*.yaml` is the source of truth for catalog master data; `scripts/seed.py`
