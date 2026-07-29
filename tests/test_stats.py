@@ -317,6 +317,29 @@ async def test_only_my_own_volume_is_counted(
     }
 
 
+async def test_deleted_sessions_stop_counting(
+    client: AsyncClient, auth: dict[str, str], workload: None
+) -> None:
+    """Deleting a bad day must drop out of every chart at once, otherwise the
+    numbers keep describing training the user has disowned."""
+    before = await client.get(BASE + "/volume", params={"period": "4w"}, headers=auth)
+    listed = await client.get(
+        SESSIONS, params={"date_from": RECENT.isoformat()}, headers=auth
+    )
+    press_day = listed.json()["items"][0]
+
+    await client.delete(f"{SESSIONS}/{press_day['id']}", headers=auth)
+    after = await client.get(BASE + "/volume", params={"period": "4w"}, headers=auth)
+
+    assert before.json()["totals"]["tonnage"] == 1800
+    assert after.json()["totals"]["tonnage"] == 600
+    assert after.json()["totals"]["sessions"] == 2
+
+    await client.post(f"{SESSIONS}/{press_day['id']}/restore", headers=auth)
+    restored = await client.get(BASE + "/volume", params={"period": "4w"}, headers=auth)
+    assert restored.json()["totals"] == before.json()["totals"]
+
+
 @pytest.mark.parametrize(
     ("period", "expected"),
     [

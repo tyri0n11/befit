@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
     bodyweight_kg NUMERIC(5, 2),
     program_day   VARCHAR(64),
     notes         TEXT,
+    -- Soft delete: a session is training history, so removing one must be
+    -- undoable. NULL means live; every read path filters on it.
+    deleted_at    TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -45,6 +48,10 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
                OR (bodyweight_kg > 20 AND bodyweight_kg < 300))
 );
 
+-- Deliberately not partial here: on a database that predates deleted_at the
+-- CREATE TABLE above is skipped, so the column does not exist yet at this
+-- point. The backfill block at the bottom swaps this for the partial index,
+-- which is where every read path's WHERE clause is actually served from.
 CREATE INDEX IF NOT EXISTS idx_sessions_user_date
     ON workout_sessions (user_id, session_date DESC);
 
@@ -108,3 +115,22 @@ CREATE TABLE IF NOT EXISTS set_logs (
 
 CREATE INDEX IF NOT EXISTS idx_set_logs_session_exercise
     ON set_logs (session_exercise_id, set_index);
+
+-- -------------------------------------------------------------
+-- Column backfill — patches databases created before soft delete.
+-- No-op on a fresh database, where the column above already exists.
+-- CREATE TABLE IF NOT EXISTS skips existing tables, so editing the
+-- CREATE alone would never reach a live database.
+-- -------------------------------------------------------------
+
+ALTER TABLE workout_sessions
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- Now that the column is guaranteed to exist, replace the plain index with a
+-- partial one: lists, stats and lookups all ask for live rows, so the deleted
+-- ones stay out of the index entirely.
+DROP INDEX IF EXISTS idx_sessions_user_date;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_date
+    ON workout_sessions (user_id, session_date DESC)
+    WHERE deleted_at IS NULL;

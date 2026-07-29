@@ -48,6 +48,9 @@ class WorkoutSession(BaseModel):
     bodyweight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     program_day: Mapped[str | None] = mapped_column(String(64), default=None)
     notes: Mapped[str | None] = mapped_column(Text, default=None)
+    # Soft delete — NULL is live. Reads filter on it instead of removing the
+    # row, so a mis-tap never destroys logged training.
+    deleted_at: Mapped[datetime | None] = mapped_column(default=None)
 
     # The whole graph is eager: a session is never read without its exercises,
     # and a lazy load would raise under asyncio.

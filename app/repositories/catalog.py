@@ -1,5 +1,6 @@
 """Data access for catalog master data (muscle groups, exercises)."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from sqlalchemy import Select, func, select
@@ -41,6 +42,20 @@ class CatalogRepository:
             stmt = stmt.where(MuscleGroup.is_trackable.is_(True))
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+    async def exercises_by_id(
+        self, exercise_ids: Collection[int]
+    ) -> dict[int, Exercise]:
+        """The ORM objects, not just an existence flag: assigning a loaded
+        `Exercise` to a new session/template slot keeps the relationship
+        populated, so rendering a freshly created row never triggers a lazy
+        load — which would raise under asyncio."""
+        if not exercise_ids:
+            return {}
+        result = await self.session.execute(
+            select(Exercise).where(Exercise.id.in_(set(exercise_ids)))
+        )
+        return {e.id: e for e in result.unique().scalars()}
 
     async def get_exercise_by_slug(self, slug: str) -> Exercise | None:
         result = await self.session.execute(

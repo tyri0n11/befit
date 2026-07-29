@@ -25,6 +25,7 @@ router = APIRouter(prefix="/sessions", tags=["training"])
 # docstring of app/services/training.py.
 _STATUS = {
     TrainingErrorCode.SESSION_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+    TrainingErrorCode.SESSION_NOT_DELETED: status.HTTP_409_CONFLICT,
     TrainingErrorCode.SESSION_EXERCISE_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     TrainingErrorCode.SET_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     TrainingErrorCode.UNKNOWN_EXERCISE: status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -44,6 +45,12 @@ async def list_sessions(
     date_from: date | None = None,
     date_to: date | None = None,
     program_day: str | None = Query(None, max_length=64),
+    include_deleted: bool = Query(
+        False, description="Include soft-deleted sessions alongside live ones"
+    ),
+    deleted_only: bool = Query(
+        False, description="Only soft-deleted sessions — the recycle bin view"
+    ),
     limit: int = Query(30, ge=1, le=200),
     offset: int = Query(0, ge=0),
     service: TrainingService = Depends(get_training_service),
@@ -53,6 +60,8 @@ async def list_sessions(
         date_from=date_from,
         date_to=date_to,
         program_day=program_day,
+        include_deleted=include_deleted,
+        deleted_only=deleted_only,
     )
     return await service.list_sessions(user.id, filters, limit=limit, offset=offset)
 
@@ -113,15 +122,53 @@ async def update_session(
 @router.delete(
     "/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a session and everything logged under it",
+    summary="Move a session to the bin (soft delete)",
 )
 async def delete_session(
     session_id: int,
     user: CurrentUser,
     service: TrainingService = Depends(get_training_service),
 ) -> Response:
+    """Reversible: the session disappears from every list and stat, and
+    `POST /{id}/restore` brings it back with its exercises and sets intact."""
     try:
         await service.delete_session(user.id, session_id)
+    except TrainingError as exc:
+        raise _http(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{session_id}/restore",
+    response_model=WorkoutSessionResponse,
+    summary="Restore a soft-deleted session",
+)
+async def restore_session(
+    session_id: int,
+    user: CurrentUser,
+    service: TrainingService = Depends(get_training_service),
+) -> WorkoutSessionResponse:
+    try:
+        workout = await service.restore_session(user.id, session_id)
+    except TrainingError as exc:
+        raise _http(exc) from exc
+    return WorkoutSessionResponse.model_validate(workout)
+
+
+@router.delete(
+    "/{session_id}/purge",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Permanently delete a session already in the bin",
+)
+async def purge_session(
+    session_id: int,
+    user: CurrentUser,
+    service: TrainingService = Depends(get_training_service),
+) -> Response:
+    """Irreversible, and a 409 unless the session was soft-deleted first —
+    emptying the bin is always a deliberate second step."""
+    try:
+        await service.purge_session(user.id, session_id)
     except TrainingError as exc:
         raise _http(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

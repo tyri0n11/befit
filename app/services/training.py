@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Exercise
 from app.models.training import SessionExercise, SetLog, WorkoutSession
+from app.repositories.catalog import CatalogRepository
 from app.repositories.training import SessionFilters, TrainingRepository
 from app.schemas.training import (
     SessionExerciseCreate,
@@ -28,6 +29,7 @@ from app.schemas.training import (
 
 class TrainingErrorCode(enum.StrEnum):
     SESSION_NOT_FOUND = "session_not_found"
+    SESSION_NOT_DELETED = "session_not_deleted"
     SESSION_EXERCISE_NOT_FOUND = "session_exercise_not_found"
     SET_NOT_FOUND = "set_not_found"
     UNKNOWN_EXERCISE = "unknown_exercise"
@@ -51,6 +53,8 @@ def _dec(value: float | None) -> Decimal | None:
 class TrainingService:
     def __init__(self, session: AsyncSession) -> None:
         self.repo = TrainingRepository(session)
+        # Exercises are catalog data; resolving them is that repository's job.
+        self.catalog = CatalogRepository(session)
 
     # --- sessions ---------------------------------------------------------
 
@@ -68,8 +72,12 @@ class TrainingService:
             offset=offset,
         )
 
-    async def get_session(self, user_id: int, session_id: int) -> WorkoutSession:
-        workout = await self.repo.get_session(user_id, session_id)
+    async def get_session(
+        self, user_id: int, session_id: int, *, include_deleted: bool = False
+    ) -> WorkoutSession:
+        workout = await self.repo.get_session(
+            user_id, session_id, include_deleted=include_deleted
+        )
         if workout is None:
             raise TrainingError(
                 TrainingErrorCode.SESSION_NOT_FOUND,
@@ -127,8 +135,32 @@ class TrainingService:
         return await self.get_session(user_id, session_id)
 
     async def delete_session(self, user_id: int, session_id: int) -> None:
+        """Soft: the row stays and `restore_session` brings it back. Deleting an
+        already-deleted session is a 404, so a double tap cannot quietly succeed
+        and hide that the first one was the real delete."""
         workout = await self.get_session(user_id, session_id)
-        await self.repo.delete_session(workout)
+        await self.repo.soft_delete_session(workout)
+
+    async def restore_session(self, user_id: int, session_id: int) -> WorkoutSession:
+        workout = await self.get_session(user_id, session_id, include_deleted=True)
+        if workout.deleted_at is None:
+            raise TrainingError(
+                TrainingErrorCode.SESSION_NOT_DELETED,
+                f"Workout session {session_id} is not deleted",
+            )
+        await self.repo.restore_session(workout)
+        return await self.get_session(user_id, session_id)
+
+    async def purge_session(self, user_id: int, session_id: int) -> None:
+        """Permanent, and only reachable for something already soft-deleted —
+        emptying the bin is a deliberate second step, never the first one."""
+        workout = await self.get_session(user_id, session_id, include_deleted=True)
+        if workout.deleted_at is None:
+            raise TrainingError(
+                TrainingErrorCode.SESSION_NOT_DELETED,
+                f"Workout session {session_id} must be deleted before it is purged",
+            )
+        await self.repo.purge_session(workout)
 
     # --- session exercises ------------------------------------------------
 
@@ -272,7 +304,7 @@ class TrainingService:
         """Resolves every referenced exercise up front and reports *all* unknown
         ids at once, the way scripts/seed.py validates."""
         wanted = list(exercise_ids)
-        found = await self.repo.exercises_by_id(wanted)
+        found = await self.catalog.exercises_by_id(wanted)
         missing = sorted({i for i in wanted if i not in found})
         if missing:
             raise TrainingError(

@@ -2,14 +2,12 @@
 session belongs to exactly one user and there is no shared-session concept, so
 scoping here means no caller can forget it."""
 
-from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.catalog import Exercise
 from app.models.training import (
     SessionExercise,
     SessionStatus,
@@ -24,6 +22,10 @@ class SessionFilters:
     date_from: date | None = None
     date_to: date | None = None
     program_day: str | None = None
+    # Soft-deleted sessions are hidden by default; history opts in to show a
+    # recycle bin, and `deleted_only` isolates it.
+    include_deleted: bool = False
+    deleted_only: bool = False
 
 
 class TrainingRepository:
@@ -49,21 +51,37 @@ class TrainingRepository:
         result = await self.session.execute(stmt)
         return list(result.unique().scalars())
 
-    async def get_session(self, user_id: int, session_id: int) -> WorkoutSession | None:
+    async def get_session(
+        self, user_id: int, session_id: int, *, include_deleted: bool = False
+    ) -> WorkoutSession | None:
+        stmt = select(WorkoutSession).where(
+            WorkoutSession.id == session_id, WorkoutSession.user_id == user_id
+        )
+        # A soft-deleted session reads as missing everywhere except restore,
+        # so nothing downstream has to remember to check the flag.
+        if not include_deleted:
+            stmt = stmt.where(WorkoutSession.deleted_at.is_(None))
         result = await self.session.execute(
-            select(WorkoutSession)
-            .where(WorkoutSession.id == session_id, WorkoutSession.user_id == user_id)
             # Without this, a re-read returns the identity-mapped object with the
             # collections it already had — a set deleted through its own endpoint
             # would still be listed under the session.
-            .execution_options(populate_existing=True)
+            stmt.execution_options(populate_existing=True)
         )
         return result.unique().scalar_one_or_none()
 
     def add_session(self, workout: WorkoutSession) -> None:
         self.session.add(workout)
 
-    async def delete_session(self, workout: WorkoutSession) -> None:
+    async def soft_delete_session(self, workout: WorkoutSession) -> None:
+        workout.deleted_at = datetime.now(UTC)
+        await self.session.flush()
+
+    async def restore_session(self, workout: WorkoutSession) -> None:
+        workout.deleted_at = None
+        await self.session.flush()
+
+    async def purge_session(self, workout: WorkoutSession) -> None:
+        """Irreversible. Only the explicit purge endpoint reaches this."""
         await self.session.delete(workout)
         await self.session.flush()
 
@@ -73,7 +91,9 @@ class TrainingRepository:
         self, user_id: int, session_id: int, session_exercise_id: int
     ) -> SessionExercise | None:
         """Joined against the parent session so a foreign id cannot be reached
-        by guessing it — ownership is part of the query, not a later check."""
+        by guessing it — ownership is part of the query, not a later check.
+        The soft-delete filter rides along for the same reason: nothing under a
+        binned session is reachable, since the rows survive the delete."""
         result = await self.session.execute(
             select(SessionExercise)
             .join(WorkoutSession, WorkoutSession.id == SessionExercise.session_id)
@@ -81,6 +101,7 @@ class TrainingRepository:
                 SessionExercise.id == session_exercise_id,
                 SessionExercise.session_id == session_id,
                 WorkoutSession.user_id == user_id,
+                WorkoutSession.deleted_at.is_(None),
             )
         )
         return result.unique().scalar_one_or_none()
@@ -122,6 +143,7 @@ class TrainingRepository:
                 SetLog.id == set_id,
                 SetLog.session_exercise_id == session_exercise_id,
                 WorkoutSession.user_id == user_id,
+                WorkoutSession.deleted_at.is_(None),
             )
         )
         return result.unique().scalar_one_or_none()
@@ -149,22 +171,6 @@ class TrainingRepository:
         await self.session.delete(item)
         await self.session.flush()
 
-    # --- catalog cross-check ----------------------------------------------
-
-    async def exercises_by_id(
-        self, exercise_ids: Collection[int]
-    ) -> dict[int, Exercise]:
-        """Returns the ORM objects, not just a existence flag: assigning
-        `SessionExercise.exercise` keeps the relationship loaded, so rendering a
-        freshly created row never triggers a lazy load (which would raise under
-        asyncio)."""
-        if not exercise_ids:
-            return {}
-        result = await self.session.execute(
-            select(Exercise).where(Exercise.id.in_(set(exercise_ids)))
-        )
-        return {e.id: e for e in result.unique().scalars()}
-
     async def flush(self) -> None:
         await self.session.flush()
 
@@ -172,6 +178,10 @@ class TrainingRepository:
 def _apply(stmt: Select, user_id: int, f: SessionFilters) -> Select:
     """Shared WHERE clause, so the count and the page always agree."""
     stmt = stmt.where(WorkoutSession.user_id == user_id)
+    if f.deleted_only:
+        stmt = stmt.where(WorkoutSession.deleted_at.is_not(None))
+    elif not f.include_deleted:
+        stmt = stmt.where(WorkoutSession.deleted_at.is_(None))
     if f.status is not None:
         stmt = stmt.where(WorkoutSession.status == f.status)
     if f.date_from is not None:

@@ -146,6 +146,9 @@ def _base(stmt: Select, user_id: int, window: StatsRange) -> Select:
             WorkoutSession.user_id == user_id,
             WorkoutSession.session_date >= window.date_from,
             WorkoutSession.session_date <= window.date_to,
+            # A soft-deleted session must stop counting immediately, otherwise
+            # deleting a bad day leaves its tonnage in every chart.
+            WorkoutSession.deleted_at.is_(None),
         )
     )
 

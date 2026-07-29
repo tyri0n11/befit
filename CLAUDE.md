@@ -89,8 +89,8 @@ SQL (`scripts/database/`):
   and enums wrapped in `DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL $$`.
   Re-running the whole set with `ON_ERROR_STOP=1` must stay clean.
 - Files are numbered by dependency order: `01_init_user` → `02_init_catalog` →
-  `03_init_training`. The numbering is load-bearing — Postgres' entrypoint runs
-  them alphabetically.
+  `03_init_training` → `04_init_template`. The numbering is load-bearing —
+  Postgres' entrypoint runs them alphabetically.
 - Name constraints and indexes explicitly: `ck_` checks, `uq_` unique, `idx_` indexes.
 - Integer `SERIAL` primary keys. `snake_case` identifiers. `TIMESTAMPTZ`, never
   bare `TIMESTAMP`.
@@ -223,6 +223,59 @@ scoped to that user; `app/services/training.py`.
 - Pydantic mirrors the SQL CHECKs (rpe 5–10, bodyweight 20–300, reps ≥ 1,
   `target_reps_min <= target_reps_max`), so a bad payload is a 422 instead of a
   500 from Postgres. Keep the two in sync when a constraint changes.
+
+### Soft delete
+
+`DELETE /sessions/{id}` sets `workout_sessions.deleted_at` instead of removing
+the row — a session is training history, so a mis-tap must be undoable.
+`POST /{id}/restore` brings it back with its exercises and sets intact;
+`DELETE /{id}/purge` is the irreversible second step and 409s unless the session
+is already in the bin.
+
+- **A binned session reads as missing everywhere.** `get_session` filters
+  `deleted_at IS NULL` unless the caller passes `include_deleted=True` (only
+  restore and purge do), and — this is what hard delete used to get for free —
+  `get_session_exercise` and `get_set` carry the same filter. Without it the
+  child rows outlive the delete and sets can still be logged into a binned
+  session; `tests/test_training.py` pins that.
+- **`_base` in `app/repositories/stats.py` filters it too**, so deleting a bad
+  day drops out of every chart at once instead of leaving its tonnage behind.
+- Listing takes `include_deleted` and `deleted_only`; the latter is the recycle
+  bin the mobile History tab shows. `deleted_at` is on both session schemas and
+  is non-null only when the caller asked for deleted rows.
+- `idx_sessions_user_date` is **partial** (`WHERE deleted_at IS NULL`). It is
+  created plain next to the table and swapped for the partial form in the
+  backfill block at the bottom of `03_init_training.sql` — on a database that
+  predates the column the `CREATE TABLE` is skipped, so a partial index defined
+  up there would fail on a column that does not exist yet.
+
+## Templates
+
+`/api/v1/templates` — user-owned reusable plans, plus the two conversions that
+make them worth having. `app/services/template.py`, schema in
+`scripts/database/04_init_template.sql`.
+
+- A template is **owned by a user**, unlike the catalog. Nothing seeds it, and
+  `uq_template_name` is scoped to `(user_id, name)` so two people may both run a
+  "Push A". A clash is checked up front and returned as 409, not an
+  `IntegrityError`.
+- `template_exercises` mirrors `session_exercises` minus everything that only
+  exists once a session has happened — `status`, `skip_reason`, and the sets.
+- `POST /templates/{id}/sessions` instantiates. It builds a
+  `WorkoutSessionCreate` and goes through `TrainingService.create_session`, so
+  there is exactly one validated path for creating a session.
+- **Instantiating copies, it does not link.** There is no `template_id` on
+  `workout_sessions`: deleting or editing a template must not reach backwards
+  into training history. `tests/test_template.py` pins this.
+- `POST /templates/from-session/{id}` saves a session's *plan* — its
+  `target_*` values, not what was actually lifted. Copying the last set's weight
+  would bake a bad day into the template.
+- `TemplateService` catches `TrainingError` from the two conversions and
+  re-raises `TemplateError`, so the endpoints map exactly one error type.
+- `ExerciseTargets` (`app/schemas/training.py`) is shared by sessions and
+  templates; the reps-order rule must not drift between them.
+- Same asyncio rules as sessions: collections initialised explicitly, `get`
+  re-reads with `populate_existing=True`, `update` re-reads for `updated_at`.
 
 ## Volume views
 

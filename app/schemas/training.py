@@ -45,7 +45,10 @@ class SetLogResponse(BaseModel):
     logged_at: datetime
 
 
-class _Targets(BaseModel):
+class ExerciseTargets(BaseModel):
+    """Shared by sessions and templates — the reps-order rule must not drift
+    between the two, and it mirrors `ck_target_reps_order` in SQL."""
+
     target_sets: int | None = Field(None, ge=1, le=100)
     target_reps_min: int | None = Field(None, ge=1, le=1000)
     target_reps_max: int | None = Field(None, ge=1, le=1000)
@@ -59,7 +62,7 @@ class _Targets(BaseModel):
         return self
 
 
-class SessionExerciseCreate(_Targets):
+class SessionExerciseCreate(ExerciseTargets):
     exercise_id: int
     order_index: int | None = Field(
         None, ge=1, description="Defaults to the end of the session"
@@ -67,7 +70,7 @@ class SessionExerciseCreate(_Targets):
     notes: str | None = None
 
 
-class SessionExerciseUpdate(_Targets):
+class SessionExerciseUpdate(ExerciseTargets):
     status: ExerciseStatus | None = None
     order_index: int | None = Field(None, ge=1)
     skip_reason: int | None = None
@@ -126,6 +129,9 @@ class WorkoutSessionSummary(BaseModel):
     exercise_count: int
     set_count: int
     tonnage: float
+    # Non-null only when the caller asked for deleted rows; live listings
+    # filter them out entirely.
+    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -141,6 +147,7 @@ class WorkoutSessionResponse(BaseModel):
     notes: str | None
     tonnage: float
     exercises: list[SessionExerciseResponse]
+    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

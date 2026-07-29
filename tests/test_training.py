@@ -220,7 +220,7 @@ async def test_update_session_status(client: AsyncClient, auth: dict[str, str]) 
     assert response.json()["notes"] == "felt strong"
 
 
-async def test_delete_session_removes_its_exercises(
+async def test_delete_session_hides_it_and_everything_under_it(
     client: AsyncClient, auth: dict[str, str], exercises: dict[str, Exercise]
 ) -> None:
     workout = await create_session(
@@ -237,6 +237,63 @@ async def test_delete_session_removes_its_exercises(
         headers=auth,
     )
     assert orphan.status_code == 404
+    gone = await client.get(f"{BASE}/{workout['id']}", headers=auth)
+    assert gone.status_code == 404
+    assert (await client.get(BASE, headers=auth)).json()["items"] == []
+
+
+async def test_delete_is_soft_and_restore_brings_the_sets_back(
+    client: AsyncClient, auth: dict[str, str], exercises: dict[str, Exercise]
+) -> None:
+    workout = await create_session(
+        client, auth, exercises=[{"exercise_id": exercises["press"].id}]
+    )
+    item_id = workout["exercises"][0]["id"]
+    await client.post(
+        f"{BASE}/{workout['id']}/exercises/{item_id}/sets",
+        json={"reps": 8, "weight_kg": 60},
+        headers=auth,
+    )
+    await client.delete(f"{BASE}/{workout['id']}", headers=auth)
+
+    binned = await client.get(BASE, params={"deleted_only": True}, headers=auth)
+    assert [s["id"] for s in binned.json()["items"]] == [workout["id"]]
+    assert binned.json()["items"][0]["deleted_at"] is not None
+
+    restored = await client.post(f"{BASE}/{workout['id']}/restore", headers=auth)
+    assert restored.status_code == 200
+    assert restored.json()["deleted_at"] is None
+    # Nothing was cascaded away while it sat in the bin.
+    assert len(restored.json()["exercises"][0]["sets"]) == 1
+
+    live = await client.get(BASE, headers=auth)
+    assert [s["id"] for s in live.json()["items"]] == [workout["id"]]
+
+
+async def test_restoring_a_live_session_is_a_conflict(
+    client: AsyncClient, auth: dict[str, str]
+) -> None:
+    workout = await create_session(client, auth)
+    assert (
+        await client.post(f"{BASE}/{workout['id']}/restore", headers=auth)
+    ).status_code == 409
+
+
+async def test_purge_requires_the_bin_first_and_is_permanent(
+    client: AsyncClient, auth: dict[str, str]
+) -> None:
+    workout = await create_session(client, auth)
+    assert (
+        await client.delete(f"{BASE}/{workout['id']}/purge", headers=auth)
+    ).status_code == 409
+
+    await client.delete(f"{BASE}/{workout['id']}", headers=auth)
+    assert (
+        await client.delete(f"{BASE}/{workout['id']}/purge", headers=auth)
+    ).status_code == 204
+    assert (
+        await client.post(f"{BASE}/{workout['id']}/restore", headers=auth)
+    ).status_code == 404
 
 
 async def test_list_filters_and_summarises(
