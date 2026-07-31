@@ -467,13 +467,39 @@ in `pyproject.toml`. asyncpg connections are pinned to the loop that opened them
 so a per-test loop breaks the shared engine pool with *"attached to a different
 loop"*.
 
+## Deployment
+
+`.github/workflows/ci.yml` lints, tests, builds and deploys. Deploying means
+committing an immutable image tag into the GitOps repo (`tyri0n11/my-k3s-argocd`);
+Argo CD on the k3s cluster reconciles from there. Nothing in CI holds a
+kubeconfig — the cluster has no inbound port, only an outbound Cloudflare Tunnel.
+
+    push to develop -> ghcr.io/tyri0n11/befit:develop-<sha> -> ns befit-dev
+    push to main    -> ghcr.io/tyri0n11/befit:main-<sha>    -> ns befit-prod
+
+Pull requests run lint + test only; they never publish an image. Rolling back is
+`git revert` of the bump commit in the GitOps repo, not a rebuild — the previous
+tag is still in GHCR.
+
+The deployed config lives in `manifests/befit/overlays/<env>/kustomization.yaml`
+in that repo. **A new `Settings` field needs three edits, not one**: `.env.example`
+here, the `configMapGenerator` in that overlay, and — if it is a credential —
+`roles/befit/defaults/main.yml` in the my-k3s-ansible repo, which builds the
+`befit-secrets` Secret from vault. A field missing from the overlay silently
+falls back to its default in the cluster.
+
+Runtime differences from the compose stack: Postgres is the shared instance at
+`postgres.data.svc.cluster.local` (databases `befit_dev` and `befit`), Redis is a
+cache-only instance with no volume, and the schema is applied by
+`make befit-schema ENV=<env>` from the Ansible repo rather than by
+`docker-entrypoint-initdb.d`.
+
 ## Open decisions
 
 Not settled yet — ask before assuming:
 
 - `core/settings.py` uses `lru_cache` for its singleton while `core/database.py`
   uses a `__new__` singleton. Two idioms for the same job; unify eventually.
-- Ruff runs only via `make lint`; there is no pre-commit hook or CI gate enforcing it.
 - No migration tool. `migrations/` is empty and `scripts/database/` does the work,
   which cannot express destructive changes.
 - `app/services/healthcheck.py` is still an empty placeholder.
