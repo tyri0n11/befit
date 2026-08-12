@@ -4,7 +4,7 @@ Run from the project root so that `app` is importable:
 
     uv run python -m scripts.migrate
 
-This is what the Argo CD PreSync hook Job runs in dev/prod (see
+This is what the Argo CD PostSync hook Job runs in dev/prod (see
 manifests/befit/base/migrate-job.yaml in the my-k3s-argocd repo) using the
 same image the Deployment runs, since the cluster has no inbound path for
 SSH/kubeconfig-based tooling to reach in from CI. `make db-init` covers the
