@@ -1,0 +1,188 @@
+---
+# Lint, test, build, deploy — one workflow on purpose. Splitting the deploy into
+# its own file would need `workflow_run`, which runs the default branch's copy
+# of the workflow and loses the triggering ref; keeping the jobs here lets
+# `needs` guarantee that nothing ships without a green suite.
+#
+# Deploying means committing an immutable image tag into the GitOps repo
+# (my-k3s-argocd); Argo CD does the rest. Nothing here talks to the cluster —
+# k3s has no inbound port, only an outbound Cloudflare Tunnel.
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  # Cancel superseded runs on the same branch, but never mid-deploy: a cancelled
+  # push to the GitOps repo could leave it half-updated.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/tyri0n11/befit
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    # tests/conftest.py opens a real asyncpg connection and the app's lifespan
+    # pings Redis, so both have to be up before pytest starts.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: befit
+          POSTGRES_USER: befit
+          POSTGRES_PASSWORD: befit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U befit -d befit"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: befit
+      DB_USER: befit
+      DB_PASSWORD: befit
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      # Throwaway, but Settings enforces >= 32 chars so it cannot be blank.
+      SECRET_KEY: ci-only-not-a-real-key-0000000000000000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      # The compose stack gets this for free via docker-entrypoint-initdb.d;
+      # a service container has no such hook, so apply the schema by hand.
+      # Same numbered files, same order as `make db-init`.
+      - name: Load the schema
+        run: |
+          for f in scripts/database/*.sql; do
+            echo "==> $f"
+            psql -v ON_ERROR_STOP=1 "$DB_URL" -f "$f"
+          done
+        env:
+          DB_URL: postgresql://befit:befit@localhost:5432/befit
+
+      - run: uv run pytest
+
+  build:
+    # Only on a real push; a PR must not publish an image.
+    if: github.event_name == 'push'
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      environment: ${{ steps.meta.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive the image tag and target environment
+        id: meta
+        run: |
+          # develop -> the dev overlay, main -> the prod overlay. Both get the
+          # same kind of tag: immutable and traceable to one commit. A moving
+          # tag would make the GitOps repo stop describing what is running.
+          case "${GITHUB_REF_NAME}" in
+            develop) echo "environment=dev"  >> "$GITHUB_OUTPUT" ;;
+            main)    echo "environment=prod" >> "$GITHUB_OUTPUT" ;;
+            *)       echo "unexpected branch ${GITHUB_REF_NAME}" >&2; exit 1 ;;
+          esac
+          echo "tag=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # COPY . /app in the prod stage, so the context is the repo root and
+          # the Dockerfile is the one under docker/.
+          context: .
+          file: docker/Dockerfile
+          target: prod
+          # Both k3s nodes are x86; building arm64 too would roughly double the
+          # job for an image nothing pulls.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # One deploy at a time across every branch: dev and prod push commits to the
+    # same GitOps repo, and two concurrent pushes would race on a non-fast-forward.
+    concurrency:
+      group: gitops-push
+      cancel-in-progress: false
+    steps:
+      - name: Check out the GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: tyri0n11/my-k3s-argocd
+          # Deploy key with write access on my-k3s-argocd. A PAT would work too,
+          # but this is scoped to the one repo and does not expire.
+          ssh-key: ${{ secrets.GITOPS_SSH_KEY }}
+          ref: main
+
+      # A line edit rather than `kustomize edit set image` or yq: kustomize drops
+      # every comment in the file, and yq strips blank lines, so either would
+      # bury the one-line tag change under reformatting on every deploy commit.
+      # The guards below are what make a regex safe here.
+      - name: Bump the image tag in the ${{ needs.build.outputs.environment }} overlay
+        env:
+          OVERLAY: manifests/befit/overlays/${{ needs.build.outputs.environment }}/kustomization.yaml
+          IMAGE: ${{ env.IMAGE }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          grep -qF "name: ${IMAGE}" "$OVERLAY" \
+            || { echo "::error::${IMAGE} is not the image in ${OVERLAY}"; exit 1; }
+          found=$(grep -cE '^[[:space:]]*newTag:' "$OVERLAY")
+          [ "$found" -eq 1 ] \
+            || { echo "::error::expected 1 newTag in ${OVERLAY}, found ${found}"; exit 1; }
+          sed -i -E "s|^([[:space:]]*newTag:).*|\1 \"${TAG}\"|" "$OVERLAY"
+
+          git diff --exit-code "$OVERLAY" && { echo "already at $TAG, nothing to push"; exit 0; }
+          git config user.name  "befit-ci[bot]"
+          git config user.email "befit-ci@users.noreply.github.com"
+          git add "$OVERLAY"
+          git commit -m "deploy(${{ needs.build.outputs.environment }}): befit ${TAG}" \
+            -m "From ${{ github.repository }}@${{ github.sha }}"
+          # Another job may have landed a commit while this one was building.
+          for _ in 1 2 3; do
+            git push && exit 0
+            git pull --rebase
+          done
+          exit 1

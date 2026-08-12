@@ -1,0 +1,63 @@
+name: befit
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: prod
+    # Every Settings field flows in from .env, so adding a setting needs no change
+    # here. Listing them individually drifted before: the Resend variables were
+    # missing and the container silently fell back to the console email backend.
+    env_file:
+      - ../.env
+    # These override .env, which holds host-side values. `environment` wins over
+    # `env_file`, so the container always talks over the compose network.
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # No fallback on purpose: Settings requires >= 32 chars, so a missing
+      # SECRET_KEY must fail loudly rather than boot on a shared default.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required, see .env.example}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-befit}
+      POSTGRES_USER: ${DB_USER:-befit}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-befit}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Auto-run on FIRST init only (empty data dir); alphabetical order.
+      # For an existing volume use `make db-init`.
+      - ../scripts/database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-befit} -d ${DB_NAME:-befit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

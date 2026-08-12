@@ -1,0 +1,154 @@
+# Muscle group tree. Nesting maps to muscle_groups.parent_id; depth is derived
+# from the nesting level and must stay within 0..2 (ck_depth_range), so three
+# levels total:
+#
+#   depth 0  region      upper_body / lower_body / core
+#   depth 1  group       chest, back, hips, ...
+#   depth 2  leaf        chest_upper, lats, quads, ...
+#
+# is_trackable defaults to true. Only leaves are trackable — the
+# trg_exercise_muscles_leaf_only trigger rejects mapping an exercise to any node
+# with is_trackable = false, so regions and groups must set it explicitly.
+#
+# Leaf codes are referenced by scripts/data/exercises.yaml. Renaming a leaf means
+# updating every exercise that maps to it.
+
+muscle_groups:
+  # =====================================================================
+  - code: upper_body
+    name_en: Upper Body
+    name_vi: Thân trên
+    is_trackable: false
+    children:
+      - code: chest
+        name_en: Chest
+        name_vi: Ngực
+        is_trackable: false
+        children:
+          - code: chest_upper
+            name_en: Upper Chest
+            name_vi: Ngực trên
+          - code: chest_mid
+            name_en: Mid Chest
+            name_vi: Ngực giữa
+          - code: chest_lower
+            name_en: Lower Chest
+            name_vi: Ngực dưới
+
+      - code: back
+        name_en: Back
+        name_vi: Lưng
+        is_trackable: false
+        children:
+          - code: lats
+            name_en: Lats
+            name_vi: Xô
+          - code: traps_upper
+            name_en: Upper Traps
+            name_vi: Cầu vai trên
+          - code: traps_mid
+            name_en: Mid Traps
+            name_vi: Cầu vai giữa
+          - code: rhomboids
+            name_en: Rhomboids
+            name_vi: Cơ thoi
+
+      - code: shoulders
+        name_en: Shoulders
+        name_vi: Vai
+        is_trackable: false
+        children:
+          - code: delt_front
+            name_en: Front Delt
+            name_vi: Vai trước
+          - code: delt_side
+            name_en: Side Delt
+            name_vi: Vai giữa
+          - code: delt_rear
+            name_en: Rear Delt
+            name_vi: Vai sau
+
+      - code: arms
+        name_en: Arms
+        name_vi: Tay
+        is_trackable: false
+        children:
+          - code: biceps
+            name_en: Biceps
+            name_vi: Tay trước
+          # Triceps is tracked per head; there is no combined `triceps` leaf.
+          - code: tricep_long
+            name_en: Triceps Long Head
+            name_vi: Tay sau đầu dài
+          - code: tricep_lateral
+            name_en: Triceps Lateral Head
+            name_vi: Tay sau đầu ngoài
+          - code: forearms
+            name_en: Forearms
+            name_vi: Cẳng tay
+
+  # =====================================================================
+  - code: lower_body
+    name_en: Lower Body
+    name_vi: Thân dưới
+    is_trackable: false
+    children:
+      - code: hips
+        name_en: Hips
+        name_vi: Hông
+        is_trackable: false
+        children:
+          - code: glutes
+            name_en: Glutes
+            name_vi: Cơ mông
+          - code: adductors
+            name_en: Adductors
+            name_vi: Cơ khép
+
+      - code: thighs
+        name_en: Thighs
+        name_vi: Đùi
+        is_trackable: false
+        children:
+          - code: quads
+            name_en: Quadriceps
+            name_vi: Cơ đùi trước
+          - code: hamstrings
+            name_en: Hamstrings
+            name_vi: Cơ đùi sau
+
+      - code: lower_legs
+        name_en: Lower Legs
+        name_vi: Cẳng chân
+        is_trackable: false
+        children:
+          - code: calves
+            name_en: Calves
+            name_vi: Cơ bắp chân
+
+  # =====================================================================
+  - code: core
+    name_en: Core
+    name_vi: Cơ trung tâm
+    is_trackable: false
+    children:
+      - code: abdominals
+        name_en: Abdominals
+        name_vi: Cơ bụng
+        is_trackable: false
+        children:
+          - code: abs
+            name_en: Rectus Abdominis
+            name_vi: Cơ bụng thẳng
+          - code: obliques
+            name_en: Obliques
+            name_vi: Cơ bụng chéo
+
+      - code: lower_back
+        name_en: Lower Back
+        name_vi: Lưng dưới
+        is_trackable: false
+        children:
+          - code: erectors
+            name_en: Spinal Erectors
+            name_vi: Cơ dựng sống lưng

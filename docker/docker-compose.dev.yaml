@@ -1,0 +1,33 @@
+# Dev overlay: applied on top of docker-compose.yaml
+#   docker compose -f docker/docker-compose.yaml -f docker/docker-compose.dev.yaml up
+
+services:
+  api:
+    build:
+      target: dev
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+      - --reload-dir=/app/app
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      - ../app:/app/app
+      - ../migrations:/app/migrations
+      - ../scripts:/app/scripts
+      - ../tests:/app/tests
+      - ../pyproject.toml:/app/pyproject.toml:ro
+      - ../uv.lock:/app/uv.lock:ro
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  postgres:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
