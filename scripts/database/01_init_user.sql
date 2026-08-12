@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     sex            sex,
     birth_date     DATE,
     height_cm      SMALLINT,
+    weight_kg      NUMERIC(5, 2),
     goal           training_goal,
     activity_level SMALLINT,
     tdee_kcal      NUMERIC(6, 1),
@@ -98,6 +99,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 
     CONSTRAINT ck_height_range
         CHECK (height_cm IS NULL OR (height_cm > 80 AND height_cm < 260)),
+    CONSTRAINT ck_profile_weight_range
+        CHECK (weight_kg IS NULL OR (weight_kg > 20 AND weight_kg < 300)),
     CONSTRAINT ck_activity_range
         CHECK (activity_level IS NULL OR activity_level BETWEEN 1 AND 5),
     CONSTRAINT ck_birth_past
@@ -147,3 +150,15 @@ ALTER TABLE user_auth
 
 ALTER TABLE user_profiles
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+-- weight_kg backs the BMR/TDEE calculation (Mifflin-St Jeor needs it
+-- alongside sex/birth_date/height_cm) — the original table predates that
+-- feature, so the column and its check arrive as a backfill.
+ALTER TABLE user_profiles
+    ADD COLUMN IF NOT EXISTS weight_kg NUMERIC(5, 2);
+
+DO $$ BEGIN
+    ALTER TABLE user_profiles
+        ADD CONSTRAINT ck_profile_weight_range
+        CHECK (weight_kg IS NULL OR (weight_kg > 20 AND weight_kg < 300));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

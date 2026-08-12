@@ -57,8 +57,14 @@ def _pkce_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-async def start_login(redis: Redis) -> str:
-    """Store a fresh state + PKCE verifier and return the Google consent URL."""
+async def start_login(redis: Redis) -> tuple[str, str]:
+    """Store a fresh state + PKCE verifier and return (consent_url, state).
+
+    The state is returned so a caller can correlate it with something of its
+    own — e.g. app/mcp/login.py maps it to a pending MCP authorization
+    request, since Google only allows one registered redirect URI and both
+    flows must therefore share app/api/v1/endpoints/auth.py's callback.
+    """
     if not settings.GOOGLE_OAUTH_CONFIGURED:
         raise GoogleOAuthError("Google sign-in is not configured")
 
@@ -83,7 +89,7 @@ async def start_login(redis: Redis) -> str:
             "prompt": "select_account",
         }
     )
-    return f"{AUTHORIZE_URL}?{query}"
+    return f"{AUTHORIZE_URL}?{query}", state
 
 
 async def _consume_state(redis: Redis, state: str) -> str:

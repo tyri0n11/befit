@@ -45,6 +45,30 @@ exercises:
       secondary: [tricep_lateral, delt_front]
       stabilizer: [abs]
 
+  - slug: incline-push-up
+    name_en: Incline Push-Up
+    name_vi: Hít đất nghiêng
+    pattern: horizontal_push
+    equipment: bodyweight
+    force: push
+    default_rest_sec: 60
+    notes: Hands elevated on a bench; easier than a flat push-up, biases the lower chest.
+    muscles:
+      primary: [chest_lower]
+      secondary: [tricep_lateral, delt_front]
+      stabilizer: [abs]
+
+  - slug: chest-press-machine
+    name_en: Chest Press Machine
+    name_vi: Đẩy ngực máy
+    pattern: horizontal_push
+    equipment: machine
+    force: push
+    default_rest_sec: 120
+    muscles:
+      primary: [chest_mid]
+      secondary: [tricep_lateral, delt_front]
+
   # --- vertical push ---------------------------------------------------
   - slug: overhead-press
     name_en: Overhead Press
@@ -81,6 +105,17 @@ exercises:
     default_rest_sec: 60
     muscles:
       primary: [delt_side]
+
+  - slug: shoulder-press-machine
+    name_en: Shoulder Press Machine
+    name_vi: Đẩy vai máy
+    pattern: vertical_push
+    equipment: machine
+    force: push
+    default_rest_sec: 120
+    muscles:
+      primary: [delt_front]
+      secondary: [delt_side, tricep_lateral]
 
   # --- vertical pull ---------------------------------------------------
   - slug: pull-up
@@ -146,6 +181,42 @@ exercises:
       primary: [lats]
       secondary: [rhomboids, traps_mid, biceps]
       stabilizer: [erectors, obliques, forearms]
+
+  - slug: dumbbell-bent-over-row
+    name_en: Dumbbell Bent-Over Row
+    name_vi: Kéo tạ đơn cúi người (2 tay)
+    pattern: horizontal_pull
+    equipment: dumbbell
+    force: pull
+    default_rest_sec: 150
+    notes: Both arms together, hinged over — the two-handed counterpart to the single-arm row.
+    muscles:
+      primary: [lats, rhomboids]
+      secondary: [biceps, traps_mid, delt_rear]
+      stabilizer: [erectors]
+
+  - slug: t-bar-row
+    name_en: T-Bar Row
+    name_vi: Kéo T-Bar
+    pattern: horizontal_pull
+    equipment: machine
+    force: pull
+    default_rest_sec: 150
+    muscles:
+      primary: [lats, rhomboids]
+      secondary: [biceps, traps_mid, delt_rear]
+      stabilizer: [erectors]
+
+  - slug: plate-loaded-row-machine
+    name_en: Plate-Loaded Row Machine
+    name_vi: Kéo lưng máy (tạ đĩa)
+    pattern: horizontal_pull
+    equipment: machine
+    force: pull
+    default_rest_sec: 120
+    muscles:
+      primary: [rhomboids, traps_mid]
+      secondary: [lats, biceps]
 
   - slug: seated-cable-row
     name_en: Seated Cable Row
@@ -243,6 +314,18 @@ exercises:
       secondary: [glutes, erectors]
       stabilizer: [abs]
 
+  - slug: dumbbell-romanian-deadlift
+    name_en: Dumbbell Romanian Deadlift
+    name_vi: Deadlift kiểu Romania với tạ đơn
+    pattern: hinge
+    equipment: dumbbell
+    force: pull
+    default_rest_sec: 150
+    muscles:
+      primary: [hamstrings]
+      secondary: [glutes, erectors]
+      stabilizer: [abs, forearms]
+
   - slug: stiff-leg-deadlift
     name_en: Stiff-Leg Deadlift
     name_vi: Deadlift chân thẳng
@@ -295,6 +378,18 @@ exercises:
       primary: [biceps]
       secondary: [forearms]
 
+  - slug: dumbbell-curl
+    name_en: Dumbbell Curl
+    name_vi: Cuốn tạ đơn (đứng/luân phiên)
+    pattern: isolation
+    equipment: dumbbell
+    force: pull
+    default_rest_sec: 75
+    notes: Standing, alternating or both arms together.
+    muscles:
+      primary: [biceps]
+      secondary: [forearms]
+
   - slug: triceps-rope-pushdown
     name_en: Triceps Rope Pushdown
     name_vi: Đẩy dây tay sau
@@ -341,6 +436,59 @@ exercises:
     muscles:
       primary: [chest_mid]
       secondary: [delt_front]
+
+  - slug: cable-fly
+    name_en: Cable Fly
+    name_vi: Ép ngực cáp
+    pattern: isolation
+    equipment: cable
+    force: push
+    default_rest_sec: 75
+    muscles:
+      primary: [chest_mid]
+      secondary: [delt_front]
+
+  - slug: dumbbell-tricep-kickback
+    name_en: Dumbbell Kickback
+    name_vi: Đá tạ tay sau
+    pattern: isolation
+    equipment: dumbbell
+    force: push
+    default_rest_sec: 60
+    muscles:
+      primary: [tricep_lateral]
+      secondary: [tricep_long]
+
+  - slug: leg-extension-machine
+    name_en: Leg Extension Machine
+    name_vi: Duỗi chân máy
+    pattern: isolation
+    equipment: machine
+    force: push
+    default_rest_sec: 75
+    muscles:
+      primary: [quads]
+
+  - slug: leg-curl-machine
+    name_en: Leg Curl Machine
+    name_vi: Gập chân máy
+    pattern: isolation
+    equipment: machine
+    force: pull
+    default_rest_sec: 75
+    muscles:
+      primary: [hamstrings]
+
+  - slug: adductor-abductor-machine
+    name_en: Adductor/Abductor Machine
+    name_vi: Máy khép/mở đùi
+    pattern: isolation
+    equipment: machine
+    force: push
+    default_rest_sec: 60
+    notes: Covers both the inner-thigh (adduction) and outer-hip (abduction) variants of the machine.
+    muscles:
+      primary: [adductors, glutes]
 
   - slug: dumbbell-hammer-curl
     name_en: Dumbbell Hammer Curl

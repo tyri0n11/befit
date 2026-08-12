@@ -9,11 +9,13 @@ from app.core.database import get_db
 from app.core.redis import get_redis
 from app.models.user import User
 from app.services.auth import AuthError, AuthService
+from app.services.body_metrics import BodyMetricsService
 from app.services.catalog import CatalogService, catalog_cache
 from app.services.email import EmailSender, get_email_sender
 from app.services.stats import StatsService
 from app.services.template import TemplateService
 from app.services.training import TrainingService
+from app.services.user_profile import UserProfileService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -41,6 +43,18 @@ def get_template_service(
     session: AsyncSession = Depends(get_db),
 ) -> TemplateService:
     return TemplateService(session)
+
+
+def get_user_profile_service(
+    session: AsyncSession = Depends(get_db),
+) -> UserProfileService:
+    return UserProfileService(session)
+
+
+def get_body_metrics_service(
+    session: AsyncSession = Depends(get_db),
+) -> BodyMetricsService:
+    return BodyMetricsService(session)
 
 
 def get_auth_service(

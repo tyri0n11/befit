@@ -4,6 +4,7 @@ from redis.asyncio import Redis
 
 from app.api.v1.dependencies import CurrentUser, get_auth_service
 from app.core.redis import get_redis
+from app.mcp.oauth import store_authorization_code
 from app.schemas.auth import (
     LoginRequest,
     PasswordResetConfirm,
@@ -15,6 +16,14 @@ from app.schemas.auth import (
 )
 from app.services.auth import AuthError, AuthErrorCode, AuthService
 from app.services.google_oauth import GoogleOAuthError, complete_login, start_login
+from app.utils.security import decode_token
+
+# Redis key prefix used only to correlate a Google login started from
+# app/mcp/login.py's "Continue with Google" button back to the MCP
+# authorization request that initiated it. Google allows exactly one
+# registered redirect URI, so both flows land on google_callback() below and
+# branch there instead of having separate callback routes.
+_MCP_GOOGLE_PREFIX = "mcp:oauth:google:"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -119,7 +128,7 @@ async def confirm_password_reset(
 )
 async def google_login(redis: Redis = Depends(get_redis)) -> RedirectResponse:
     try:
-        url = await start_login(redis)
+        url, _state = await start_login(redis)
     except GoogleOAuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -130,7 +139,7 @@ async def google_login(redis: Redis = Depends(get_redis)) -> RedirectResponse:
 
 @router.get(
     "/google/callback",
-    response_model=TokenPair,
+    response_model=None,
     summary="Complete the Google flow and issue tokens",
 )
 async def google_callback(
@@ -139,7 +148,7 @@ async def google_callback(
     error: str | None = None,
     redis: Redis = Depends(get_redis),
     service: AuthService = Depends(get_auth_service),
-) -> TokenPair:
+) -> TokenPair | RedirectResponse:
     if error:
         # Google sends ?error=access_denied when the user cancels consent.
         raise HTTPException(
@@ -160,9 +169,27 @@ async def google_callback(
         ) from exc
 
     try:
-        return await service.login_with_google(identity)
+        pair = await service.login_with_google(identity)
     except AuthError as exc:
         raise _http_error(exc) from exc
+
+    # Was this Google login started from app/mcp/login.py's "Continue with
+    # Google" button rather than the REST client's own? If so, complete the
+    # pending MCP authorization instead of returning tokens directly.
+    mcp_key = _MCP_GOOGLE_PREFIX + state
+    mcp_request_id = await redis.get(mcp_key)
+    if mcp_request_id:
+        await redis.delete(mcp_key)
+        claims = decode_token(pair.access_token, "access")
+        redirect_url = await store_authorization_code(mcp_request_id, claims.user_id)
+        if redirect_url is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This sign-in link has expired",
+            )
+        return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
+
+    return pair
 
 
 @router.get("/me", response_model=UserResponse, summary="The authenticated user")
