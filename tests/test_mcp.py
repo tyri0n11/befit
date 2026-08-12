@@ -63,6 +63,12 @@ EXPECTED_TOOLS = {
     "volume",
     "by_muscle",
     "by_exercise",
+    "get_profile",
+    "update_profile",
+    "log_body_metrics",
+    "list_body_metrics",
+    "body_metrics_progress",
+    "delete_body_metrics_entry",
 }
 
 

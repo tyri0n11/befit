@@ -1,7 +1,8 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +18,18 @@ class UserStatus(enum.StrEnum):
 class AuthProvider(enum.StrEnum):
     GOOGLE = "google"
     LOCAL = "local"
+
+
+class Sex(enum.StrEnum):
+    MALE = "male"
+    FEMALE = "female"
+
+
+class TrainingGoal(enum.StrEnum):
+    LOSE_FAT = "lose_fat"
+    MAINTAIN = "maintain"
+    GAIN_MUSCLE = "gain_muscle"
+    RECOMP = "recomp"
 
 
 class User(BaseModel):
@@ -60,6 +73,31 @@ class UserAuth(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="auth_methods")
+
+
+class UserProfile(BaseModel):
+    """Physical attributes, 1:1 with `User`. `bmr_kcal`/`tdee_kcal` are
+    derived (Mifflin-St Jeor) and recomputed by
+    `app/services/user_profile.py` whenever the profile changes — they are
+    not independently settable fields."""
+
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    sex: Mapped[Sex | None] = mapped_column(pg_enum(Sex, "sex"), default=None)
+    birth_date: Mapped[date | None] = mapped_column(default=None)
+    height_cm: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+    goal: Mapped[TrainingGoal | None] = mapped_column(
+        pg_enum(TrainingGoal, "training_goal"), default=None
+    )
+    activity_level: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    tdee_kcal: Mapped[Decimal | None] = mapped_column(Numeric(6, 1), default=None)
+    bmr_kcal: Mapped[Decimal | None] = mapped_column(Numeric(6, 1), default=None)
+
+    user: Mapped[User] = relationship()
 
 
 class PasswordResetToken(Base):

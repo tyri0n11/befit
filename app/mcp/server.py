@@ -23,4 +23,4 @@ mcp = MCPServer(
     ),
 )
 
-from app.mcp.tools import catalog, stats, template, training
+from app.mcp.tools import catalog, stats, template, training, user
