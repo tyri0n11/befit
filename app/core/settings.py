@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,7 +68,14 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        # DB_USER/DB_PASSWORD are interpolated into a URL, so any of
+        # : / ? # [ ] @ in them must be percent-encoded or the parser
+        # misreads the authority — e.g. a password containing "@" makes it
+        # look like the host separator, silently pointing DNS lookups at a
+        # mangled "<rest-of-password>@<real-host>" that doesn't resolve.
+        user = quote_plus(self.DB_USER)
+        password = quote_plus(self.DB_PASSWORD)
+        return f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     @computed_field
     @property
