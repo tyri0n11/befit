@@ -54,6 +54,10 @@ class Settings(BaseSettings):
 
     # MCP (Model Context Protocol) — exposes the app as tools for Claude chat/cowork.
     MCP_ENABLED: bool = True
+    # This API's own public origin, used as the OAuth issuer for MCP clients.
+    # Must match exactly what those clients see — RFC 8414 issuer comparison
+    # is exact-string, so a trailing slash or wrong scheme breaks discovery.
+    MCP_ISSUER_URL: str = "http://localhost:8000"
 
     @computed_field
     @property
