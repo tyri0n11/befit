@@ -9,7 +9,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
 
-    PROJECT_NAME: str = "FastAPI Project"
+    PROJECT_NAME: str = "befit101"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     # Level for the `app` logger; see app/core/logging.py.
@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
     # How long the browser has to complete consent before the state expires.
     OAUTH_STATE_TTL_SECONDS: int = 600
+
+    # MCP (Model Context Protocol) — exposes the app as tools for Claude chat/cowork.
+    MCP_ENABLED: bool = True
 
     @computed_field
     @property
