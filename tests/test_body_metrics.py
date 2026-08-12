@@ -43,6 +43,74 @@ async def test_log_out_of_range_weight_rejected(
     assert response.status_code == 422
 
 
+async def test_log_inbody_style_fields(
+    client: AsyncClient, auth: dict[str, str]
+) -> None:
+    response = await client.post(
+        BASE,
+        headers=auth,
+        json={
+            "measured_at": "2026-08-12",
+            "muscle_mass_kg": 30,
+            "body_fat_percent": 35,
+            "visceral_fat_level": 14,
+            "measured_bmr_kcal": 1470,
+            "extra": {"body_water_percent": 55.2},
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["visceral_fat_level"] == 14
+    assert body["measured_bmr_kcal"] == 1470.0
+    assert body["extra"] == {"body_water_percent": 55.2}
+
+
+async def test_log_bmr_out_of_range_rejected(
+    client: AsyncClient, auth: dict[str, str]
+) -> None:
+    response = await client.post(
+        BASE,
+        headers=auth,
+        json={"measured_at": "2026-08-01", "measured_bmr_kcal": 50},
+    )
+    assert response.status_code == 422
+
+
+async def test_progress_tracks_visceral_fat_and_bmr(
+    client: AsyncClient, auth: dict[str, str]
+) -> None:
+    await client.post(
+        BASE,
+        headers=auth,
+        json={
+            "measured_at": "2026-07-01",
+            "visceral_fat_level": 16,
+            "measured_bmr_kcal": 1450,
+        },
+    )
+    await client.post(
+        BASE,
+        headers=auth,
+        json={
+            "measured_at": "2026-08-12",
+            "visceral_fat_level": 14,
+            "measured_bmr_kcal": 1470,
+        },
+    )
+
+    response = await client.get(
+        BASE + "/progress", headers=auth, params={"period": "3m"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["visceral_fat_level"] == {"baseline": 16, "current": 14, "change": -2}
+    assert body["measured_bmr_kcal"] == {
+        "baseline": 1450.0,
+        "current": 1470.0,
+        "change": 20.0,
+    }
+
+
 async def test_relogging_same_day_upserts_in_place(
     client: AsyncClient, auth: dict[str, str]
 ) -> None:

@@ -67,6 +67,9 @@ class BodyMetricsService:
         entry.weight_kg = _dec(payload.weight_kg)
         entry.body_fat_percent = _dec(payload.body_fat_percent)
         entry.muscle_mass_kg = _dec(payload.muscle_mass_kg)
+        entry.visceral_fat_level = payload.visceral_fat_level
+        entry.measured_bmr_kcal = _dec(payload.measured_bmr_kcal)
+        entry.extra = payload.extra
         entry.notes = payload.notes
         return await self.repo.upsert(entry)
 
@@ -87,6 +90,8 @@ class BodyMetricsService:
             weight_kg=_metric_progress(entries, "weight_kg"),
             body_fat_percent=_metric_progress(entries, "body_fat_percent"),
             muscle_mass_kg=_metric_progress(entries, "muscle_mass_kg"),
+            visceral_fat_level=_metric_progress(entries, "visceral_fat_level"),
+            measured_bmr_kcal=_metric_progress(entries, "measured_bmr_kcal"),
         )
 
     async def delete(self, user_id: int, log_id: int) -> None:
