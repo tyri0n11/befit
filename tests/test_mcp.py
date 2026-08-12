@@ -167,7 +167,7 @@ async def test_mcp_end_to_end_authenticated_round_trip(
             )
             async with (
                 streamable_http_client(
-                    "http://mcp-test/mcp/", http_client=http_client
+                    "http://mcp-test/mcp", http_client=http_client
                 ) as (read_stream, write_stream),
                 ClientSession(read_stream, write_stream) as mcp_client,
             ):
