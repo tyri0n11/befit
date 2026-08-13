@@ -1,9 +1,12 @@
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 
 from app.api.v1.dependencies import CurrentUser, get_auth_service
 from app.core.redis import get_redis
+from app.core.settings import settings
 from app.mcp.oauth import store_authorization_code
 from app.schemas.auth import (
     LoginRequest,
@@ -18,12 +21,13 @@ from app.services.auth import AuthError, AuthErrorCode, AuthService
 from app.services.google_oauth import GoogleOAuthError, complete_login, start_login
 from app.utils.security import decode_token
 
-# Redis key prefix used only to correlate a Google login started from
-# app/mcp/login.py's "Continue with Google" button back to the MCP
-# authorization request that initiated it. Google allows exactly one
-# registered redirect URI, so both flows land on google_callback() below and
-# branch there instead of having separate callback routes.
+# Redis key prefixes used only to correlate a Google login back to whichever
+# caller started it — app/mcp/login.py's "Continue with Google" button, or
+# the mobile app's own login screen. Google allows exactly one registered
+# redirect URI, so every flow lands on google_callback() below and branches
+# there instead of having separate callback routes.
 _MCP_GOOGLE_PREFIX = "mcp:oauth:google:"
+_MOBILE_GOOGLE_PREFIX = "mobile:oauth:google:"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -126,13 +130,25 @@ async def confirm_password_reset(
     status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     summary="Redirect to Google consent",
 )
-async def google_login(redis: Redis = Depends(get_redis)) -> RedirectResponse:
+async def google_login(
+    mobile: bool = False, redis: Redis = Depends(get_redis)
+) -> RedirectResponse:
     try:
-        url, _state = await start_login(redis)
+        url, state = await start_login(redis)
     except GoogleOAuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+
+    if mobile:
+        # google_callback() reads this to know it should redirect to the
+        # mobile app's deep link instead of returning tokens as JSON. Same
+        # TTL as the state it points back to.
+        await redis.set(
+            _MOBILE_GOOGLE_PREFIX + state,
+            "1",
+            ex=settings.OAUTH_STATE_TTL_SECONDS,
+        )
 
     return RedirectResponse(url)
 
@@ -188,6 +204,21 @@ async def google_callback(
                 detail="This sign-in link has expired",
             )
         return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
+
+    # Was this started from the mobile app's /google/login?mobile=true? If
+    # so it can't do anything with a JSON body — hand the tokens back via
+    # the app's own deep link instead. See befit-mobile's
+    # docs/DEEP_LINKING_AUTH.md for the receiving side.
+    mobile_key = _MOBILE_GOOGLE_PREFIX + state
+    if await redis.get(mobile_key):
+        await redis.delete(mobile_key)
+        query = urlencode(
+            {"access_token": pair.access_token, "refresh_token": pair.refresh_token}
+        )
+        return RedirectResponse(
+            f"{settings.MOBILE_APP_SCHEME}?{query}",
+            status_code=status.HTTP_302_FOUND,
+        )
 
     return pair
 

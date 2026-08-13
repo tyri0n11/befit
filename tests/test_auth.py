@@ -1,6 +1,7 @@
 """Smoke tests for the auth endpoints. Nothing persists — see conftest.py."""
 
 from datetime import datetime
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -404,6 +405,86 @@ class TestGoogleOAuth:
 
         with pytest.raises(GoogleOAuthError):
             await consume_state(fake_redis, state)
+
+    async def test_login_mobile_flag_marks_state(
+        self, client: AsyncClient, google_configured: None, fake_redis
+    ) -> None:
+        """?mobile=true is what tells the callback to redirect to the app
+        instead of returning JSON — see test_callback_redirects_mobile_to_app."""
+        redirect = await client.get(
+            BASE + "/google/login?mobile=true", follow_redirects=False
+        )
+        state = parse_qs(urlparse(redirect.headers["location"]).query)["state"][0]
+
+        assert await fake_redis.get(f"mobile:oauth:google:{state}") == "1"
+
+    async def test_callback_redirects_mobile_to_app(
+        self,
+        client: AsyncClient,
+        google_configured: None,
+        fake_redis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A login started with ?mobile=true can't do anything with a JSON
+        body, so the callback must hand tokens back via the app's deep link."""
+        redirect = await client.get(
+            BASE + "/google/login?mobile=true", follow_redirects=False
+        )
+        state = parse_qs(urlparse(redirect.headers["location"]).query)["state"][0]
+
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.auth.complete_login",
+            AsyncMock(
+                return_value=GoogleIdentity(
+                    subject="google-sub-mobile",
+                    email="mobile-user@example.com",
+                    email_verified=True,
+                    display_name="Mobile User",
+                )
+            ),
+        )
+
+        response = await client.get(
+            BASE + f"/google/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        assert location.startswith(settings.MOBILE_APP_SCHEME)
+        query = parse_qs(urlparse(location).query)
+        assert query["access_token"] and query["refresh_token"]
+        # Single-use, same as the MCP correlation key it mirrors.
+        assert await fake_redis.get(f"mobile:oauth:google:{state}") is None
+
+    async def test_callback_returns_json_without_mobile_flag(
+        self,
+        client: AsyncClient,
+        google_configured: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A plain (non-mobile) login must keep returning tokens as JSON —
+        the mobile branch must not hijack every caller."""
+        redirect = await client.get(BASE + "/google/login", follow_redirects=False)
+        state = parse_qs(urlparse(redirect.headers["location"]).query)["state"][0]
+
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.auth.complete_login",
+            AsyncMock(
+                return_value=GoogleIdentity(
+                    subject="google-sub-web",
+                    email="web-user@example.com",
+                    email_verified=True,
+                    display_name="Web User",
+                )
+            ),
+        )
+
+        response = await client.get(
+            BASE + f"/google/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+        assert response.status_code == 200
+        assert response.json()["access_token"]
 
 
 class TestGoogleIdentityLogin:

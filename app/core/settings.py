@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
     # How long the browser has to complete consent before the state expires.
     OAUTH_STATE_TTL_SECONDS: int = 600
+    # Deep link the mobile app's Google flow is redirected back to (see
+    # google_callback's `mobile` branch). Query string carries the token pair.
+    MOBILE_APP_SCHEME: str = "befit://auth/google-callback"
 
     # MCP (Model Context Protocol) — exposes the app as tools for Claude chat/cowork.
     MCP_ENABLED: bool = True
