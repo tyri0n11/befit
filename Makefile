@@ -69,6 +69,10 @@ seed: .env ## Seed catalog master data from scripts/data/*.yaml
 seed-dry: .env ## Validate the seed data and roll the transaction back
 	uv run python -m scripts.seed --dry-run
 
+.PHONY: seed-dev-account
+seed-dev-account: .env ## Seed a sample local-dev account with workout history
+	uv run python -m scripts.seed_dev_account
+
 .PHONY: db-reset
 db-reset: ## Drop the postgres volume and recreate the schema from scratch
 	$(DC_DEV) rm -sfv postgres
