@@ -61,6 +61,7 @@ class Exercise:
     equipment: str
     force: str
     is_unilateral: bool
+    load_type: str
     default_rest_sec: int
     requires_overhead: bool
     notes: str | None
@@ -166,6 +167,7 @@ def parse_exercises(items: list[dict[str, Any]]) -> list[Exercise]:
                 equipment=item["equipment"],
                 force=item["force"],
                 is_unilateral=item.get("is_unilateral", False),
+                load_type=item.get("load_type", "single"),
                 default_rest_sec=item.get("default_rest_sec", 90),
                 requires_overhead=item.get("requires_overhead", False),
                 notes=item.get("notes"),
@@ -284,6 +286,7 @@ async def validate_enums(session: AsyncSession, exercises: list[Exercise]) -> No
         ("pattern", "movement_pattern"),
         ("equipment", "equipment_type"),
         ("force", "force_type"),
+        ("load_type", "load_type"),
     ):
         allowed = await _enum_labels(session, enum_type)
 
@@ -320,14 +323,15 @@ _UPSERT_MUSCLE_GROUP = text("""
 _UPSERT_EXERCISE = text("""
     INSERT INTO exercises (
         slug, name_en, name_vi, pattern, equipment, force,
-        is_unilateral, default_rest_sec, requires_overhead, notes
+        is_unilateral, load_type, default_rest_sec, requires_overhead, notes
     )
     VALUES (
         :slug, :name_en, :name_vi,
         CAST(:pattern AS movement_pattern),
         CAST(:equipment AS equipment_type),
         CAST(:force AS force_type),
-        :is_unilateral, :default_rest_sec, :requires_overhead, :notes
+        :is_unilateral, CAST(:load_type AS load_type),
+        :default_rest_sec, :requires_overhead, :notes
     )
     ON CONFLICT (slug) DO UPDATE SET
         name_en           = EXCLUDED.name_en,
@@ -336,6 +340,7 @@ _UPSERT_EXERCISE = text("""
         equipment         = EXCLUDED.equipment,
         force             = EXCLUDED.force,
         is_unilateral     = EXCLUDED.is_unilateral,
+        load_type         = EXCLUDED.load_type,
         default_rest_sec  = EXCLUDED.default_rest_sec,
         requires_overhead = EXCLUDED.requires_overhead,
         notes             = EXCLUDED.notes,
@@ -433,6 +438,7 @@ async def seed_exercises(
                     "equipment": ex.equipment,
                     "force": ex.force,
                     "is_unilateral": ex.is_unilateral,
+                    "load_type": ex.load_type,
                     "default_rest_sec": ex.default_rest_sec,
                     "requires_overhead": ex.requires_overhead,
                     "notes": ex.notes,

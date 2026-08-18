@@ -36,6 +36,15 @@ DO $$ BEGIN
     CREATE TYPE force_type AS ENUM ('push', 'pull', 'static');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- 'dual' is a machine with two independently loaded weight stacks (e.g. a
+-- plate-loaded shoulder press, a cable crossover) where the logged weight is
+-- the load on ONE side, not the combined total. This is unrelated to
+-- is_unilateral, which is about the movement being worked one limb at a time —
+-- a bilateral dual-loaded machine needs the same x2 tonnage treatment.
+DO $$ BEGIN
+    CREATE TYPE load_type AS ENUM ('single', 'dual');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- -------------------------------------------------------------
 -- muscle_groups — self-referencing tree (max depth 2)
 -- -------------------------------------------------------------
@@ -70,6 +79,7 @@ CREATE TABLE IF NOT EXISTS exercises (
     equipment          equipment_type NOT NULL,
     force              force_type NOT NULL,
     is_unilateral      BOOLEAN NOT NULL DEFAULT FALSE,
+    load_type          load_type NOT NULL DEFAULT 'single',
     default_rest_sec   SMALLINT NOT NULL DEFAULT 90,
     requires_overhead  BOOLEAN NOT NULL DEFAULT FALSE,
     notes              TEXT,
@@ -124,3 +134,12 @@ DROP TRIGGER IF EXISTS trg_exercise_muscles_leaf_only ON exercise_muscles;
 CREATE TRIGGER trg_exercise_muscles_leaf_only
     BEFORE INSERT OR UPDATE ON exercise_muscles
     FOR EACH ROW EXECUTE FUNCTION check_muscle_is_leaf();
+
+-- -------------------------------------------------------------
+-- Backfill — patches a database created before load_type existed.
+-- No-op on a fresh database, where the CREATE TABLE above already
+-- has the column.
+-- -------------------------------------------------------------
+
+ALTER TABLE exercises
+    ADD COLUMN IF NOT EXISTS load_type load_type NOT NULL DEFAULT 'single';

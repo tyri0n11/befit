@@ -4,8 +4,10 @@
 -- Idempotent: safe to re-run
 --
 -- Volume is NEVER stored — computed at query time:
---   tonnage = weight_kg * (2 if is_unilateral else 1) * reps
+--   tonnage = weight_kg * (2 if is_unilateral or load_type = 'dual' else 1) * reps
 --   bodyweight (weight_kg IS NULL) -> tracked via reps
+--   load_type = 'dual' covers machines with two independently loaded weight
+--   stacks (see 02_init_catalog.sql) where the logged weight is per side.
 -- =============================================================
 
 -- -------------------------------------------------------------

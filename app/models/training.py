@@ -6,7 +6,7 @@ from sqlalchemy import ForeignKey, Integer, Numeric, SmallInteger, String, Text,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel, pg_enum
-from app.models.catalog import Exercise
+from app.models.catalog import Exercise, LoadType
 
 
 class SessionStatus(enum.StrEnum):
@@ -121,8 +121,13 @@ class SessionExercise(Base):
     @property
     def tonnage(self) -> float:
         """Never stored — see the header of 03_init_training.sql. A unilateral
-        movement counts double because the logged weight is per side."""
-        factor = 2 if self.exercise.is_unilateral else 1
+        movement or a dual-loaded machine (see `LoadType`) counts double
+        because the logged weight is per side."""
+        factor = (
+            2
+            if self.exercise.is_unilateral or self.exercise.load_type == LoadType.DUAL
+            else 1
+        )
         return float(
             sum(s.weight_kg * factor * s.reps for s in self.sets if s.weight_kg)
         )

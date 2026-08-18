@@ -12,7 +12,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import settings
-from app.models.catalog import EquipmentType, Exercise, ForceType, MovementPattern
+from app.models.catalog import (
+    EquipmentType,
+    Exercise,
+    ForceType,
+    LoadType,
+    MovementPattern,
+)
 
 BASE = f"{settings.API_V1_STR}/sessions"
 AUTH = f"{settings.API_V1_STR}/auth"
@@ -42,9 +48,17 @@ async def exercises(session: AsyncSession) -> dict[str, Exercise]:
         force=ForceType.PULL,
         is_unilateral=True,
     )
-    session.add_all([press, row])
+    dual_press = Exercise(
+        slug="zz-shoulder-press-machine",
+        name_en="ZZ Shoulder Press Machine",
+        pattern=MovementPattern.VERTICAL_PUSH,
+        equipment=EquipmentType.MACHINE,
+        force=ForceType.PUSH,
+        load_type=LoadType.DUAL,
+    )
+    session.add_all([press, row, dual_press])
     await session.flush()
-    return {"press": press, "row": row}
+    return {"press": press, "row": row, "dual_press": dual_press}
 
 
 @pytest_asyncio.fixture
@@ -153,6 +167,32 @@ async def test_unilateral_tonnage_counts_both_sides(
     assert by_slug["zz-bench-press"]["tonnage"] == 200
     assert by_slug["zz-one-arm-row"]["tonnage"] == 400
     assert body["tonnage"] == 600
+
+
+async def test_dual_loaded_machine_tonnage_counts_both_stacks(
+    client: AsyncClient, auth: dict[str, str], exercises: dict[str, Exercise]
+) -> None:
+    """A dual-loaded machine (two independent weight stacks) doubles the same
+    way a unilateral movement does — the logged weight is per side, not the
+    combined total."""
+    workout = await create_session(
+        client,
+        auth,
+        exercises=[{"exercise_id": exercises["dual_press"].id}],
+    )
+    (dual_press,) = workout["exercises"]
+
+    logged = await client.post(
+        f"{BASE}/{workout['id']}/exercises/{dual_press['id']}/sets",
+        json={"reps": 10, "weight_kg": 40},
+        headers=auth,
+    )
+    assert logged.status_code == 201, logged.text
+
+    body = (await client.get(f"{BASE}/{workout['id']}", headers=auth)).json()
+
+    assert body["exercises"][0]["tonnage"] == 800
+    assert body["tonnage"] == 800
 
 
 async def test_set_index_autoincrements_and_conflicts(

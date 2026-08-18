@@ -17,6 +17,7 @@ from app.models.catalog import (
     Exercise,
     ExerciseMuscle,
     ForceType,
+    LoadType,
     MovementPattern,
     MuscleGroup,
     MuscleRole,
@@ -81,7 +82,15 @@ async def catalog(session: AsyncSession) -> dict[str, Exercise]:
         equipment=EquipmentType.BODYWEIGHT,
         force=ForceType.PULL,
     )
-    session.add_all([press, row, pullup])
+    dual_press = Exercise(
+        slug="zz-shoulder-press-machine",
+        name_en="ZZ Shoulder Press Machine",
+        pattern=MovementPattern.VERTICAL_PUSH,
+        equipment=EquipmentType.MACHINE,
+        force=ForceType.PUSH,
+        load_type=LoadType.DUAL,
+    )
+    session.add_all([press, row, pullup, dual_press])
     await session.flush()
 
     session.add_all(
@@ -104,7 +113,7 @@ async def catalog(session: AsyncSession) -> dict[str, Exercise]:
         ]
     )
     await session.flush()
-    return {"press": press, "row": row, "pullup": pullup}
+    return {"press": press, "row": row, "pullup": pullup, "dual_press": dual_press}
 
 
 async def log(
@@ -148,6 +157,24 @@ async def workload(
     await log(client, auth, EARLIER, catalog["pullup"], [{"reps": 8}])
     # Outside every window shorter than 6 months.
     await log(client, auth, LONG_AGO, catalog["press"], [{"reps": 5, "weight_kg": 100}])
+
+
+async def test_dual_loaded_machine_counts_both_stacks(
+    client: AsyncClient, auth: dict[str, str], catalog: dict[str, Exercise]
+) -> None:
+    """A dual-loaded machine (two independent weight stacks) must double the
+    same way a unilateral movement does — the logged weight is per side."""
+    await log(
+        client,
+        auth,
+        RECENT,
+        catalog["dual_press"],
+        [{"reps": 10, "weight_kg": 40}],
+    )
+
+    response = await client.get(BASE + "/volume", params={"period": "1w"}, headers=auth)
+
+    assert response.json()["totals"]["tonnage"] == 800
 
 
 async def test_requires_authentication(client: AsyncClient) -> None:

@@ -43,6 +43,17 @@ class MuscleRole(enum.StrEnum):
     STABILIZER = "stabilizer"
 
 
+class LoadType(enum.StrEnum):
+    """'DUAL' is a machine with two independently loaded weight stacks (a
+    plate-loaded shoulder press, a cable crossover): the logged weight is the
+    load on one side, not the combined total. Unrelated to `is_unilateral`,
+    which is about the movement being worked one limb at a time — a bilateral
+    dual-loaded machine needs the same x2 tonnage treatment."""
+
+    SINGLE = "single"
+    DUAL = "dual"
+
+
 class MuscleGroup(Base):
     """Self-referencing tree, max depth 2. Only leaves (`is_trackable`) may be
     mapped to an exercise — `trg_exercise_muscles_leaf_only` enforces it."""
@@ -80,6 +91,9 @@ class Exercise(BaseModel):
     )
     force: Mapped[ForceType] = mapped_column(pg_enum(ForceType, "force_type"))
     is_unilateral: Mapped[bool] = mapped_column(Boolean, default=False)
+    load_type: Mapped[LoadType] = mapped_column(
+        pg_enum(LoadType, "load_type"), default=LoadType.SINGLE
+    )
     default_rest_sec: Mapped[int] = mapped_column(SmallInteger, default=90)
     requires_overhead: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, default=None)

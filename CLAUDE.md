@@ -172,6 +172,12 @@ and could also bypass the ≥1-primary-muscle rule.
   levels and a few dozen rows, so `CatalogService.muscle_group_tree` assembles it
   in Python from one flat query ordered by `depth` — a self-referencing lazy
   relationship would emit a load per node and raise under asyncio.
+- `load_type` (`single`/`dual`) marks a machine with two independently loaded
+  weight stacks — a plate-loaded shoulder press, a cable crossover — where the
+  logged weight is per side, not the combined total. It is unrelated to
+  `is_unilateral` (one limb at a time); both flags double tonnage the same way,
+  and either can be true without the other. Currently seeded on
+  `shoulder-press-machine`, `plate-loaded-row-machine`, `cable-fly`.
 
 ### Caching
 
@@ -209,8 +215,11 @@ scoped to that user; `app/services/training.py`.
   call. Unknown `exercise_id`s are reported together in a single 422, the way
   `scripts/seed.py` reports validation failures.
 - **Tonnage is never stored** — `SessionExercise.tonnage` computes it, doubling
-  the weight for a unilateral movement because the logged value is per side.
-  This mirrors the header comment of `03_init_training.sql`.
+  the weight for a unilateral movement or a dual-loaded machine (`load_type`)
+  because the logged value is per side. This mirrors the header comment of
+  `03_init_training.sql`. Because it is computed at read time rather than
+  backfilled, fixing a mis-tagged `load_type` retroactively corrects every past
+  session's tonnage with no data migration.
 - New rows set `exercises=[]` / `sets=[]` explicitly. Once a flush makes a row
   persistent, an untouched collection counts as *unloaded*, and serialising the
   response would emit a lazy load — `MissingGreenlet` under asyncio. For the
@@ -288,9 +297,10 @@ caller's logged sets. `app/repositories/stats.py`.
 - The queries are driven **from `set_logs`**, so planned-but-unlogged work never
   counts — a row exists only for a set that was performed.
 - Tonnage repeats the `03_init_training.sql` rule in SQL (`weight_kg * sides *
-  reps`, `sides = 2` when unilateral). A bodyweight set has a NULL weight and
-  contributes 0, which is why every response carries `reps` next to `tonnage` —
-  reading tonnage alone makes calisthenics look like a rest day.
+  reps`, `sides = 2` when unilateral or `load_type = 'dual'`). A bodyweight set
+  has a NULL weight and contributes 0, which is why every response carries
+  `reps` next to `tonnage` — reading tonnage alone makes calisthenics look like
+  a rest day.
 - The window is a preset `Period` (`1w`, `2w`, `4w`, `1m`, `3m`, `6m`, `1y`)
   counted back from today, or explicit `date_from`/`date_to`. Explicit dates
   win; `period` only fills a missing start. Month arithmetic clamps

@@ -1,6 +1,12 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.catalog import EquipmentType, ForceType, MovementPattern, MuscleRole
+from app.models.catalog import (
+    EquipmentType,
+    ForceType,
+    LoadType,
+    MovementPattern,
+    MuscleRole,
+)
 
 
 class MuscleGroupResponse(BaseModel):
@@ -41,6 +47,7 @@ class ExerciseResponse(BaseModel):
     equipment: EquipmentType
     force: ForceType
     is_unilateral: bool
+    load_type: LoadType
     default_rest_sec: int
     requires_overhead: bool
     notes: str | None

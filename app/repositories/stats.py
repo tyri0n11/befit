@@ -5,23 +5,36 @@ is tens of thousands of `set_logs` rows and summing them in the service would
 mean loading all of them.
 
 Tonnage follows the rule stated in the header of `03_init_training.sql` —
-`weight_kg * (2 if is_unilateral else 1) * reps`. A bodyweight movement has a
-NULL weight and therefore contributes 0 tonnage; it is `reps` that records it,
-which is why every query returns both.
+`weight_kg * (2 if is_unilateral or load_type = 'dual' else 1) * reps`. A
+bodyweight movement has a NULL weight and therefore contributes 0 tonnage; it
+is `reps` that records it, which is why every query returns both.
 """
 
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import Date, Row, Select, case, func, select
+from sqlalchemy import Date, Row, Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.models.catalog import Exercise, ExerciseMuscle, MuscleGroup, MuscleRole
+from app.models.catalog import (
+    Exercise,
+    ExerciseMuscle,
+    LoadType,
+    MuscleGroup,
+    MuscleRole,
+)
 from app.models.training import Bucket, SessionExercise, SetLog, WorkoutSession
 
-# A unilateral movement is logged per side, so both sides count.
-_SIDES = case((Exercise.is_unilateral.is_(True), 2), else_=1)
+# A unilateral movement is logged per side, so both sides count. Same for a
+# dual-loaded machine (see `LoadType`) — the weight logged is per stack.
+_SIDES = case(
+    (
+        or_(Exercise.is_unilateral.is_(True), Exercise.load_type == LoadType.DUAL),
+        2,
+    ),
+    else_=1,
+)
 
 _TONNAGE = func.coalesce(
     func.sum(func.coalesce(SetLog.weight_kg, 0) * _SIDES * SetLog.reps), 0

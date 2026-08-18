@@ -3,6 +3,9 @@
 # pattern   -> movement_pattern enum
 # equipment -> equipment_type enum
 # force     -> force_type enum
+# load_type -> load_type enum, default "single". Set to "dual" for a machine
+#              with two independently loaded weight stacks (one per side),
+#              where the logged weight is per side, not the combined total.
 # muscles   -> exercise_muscles rows, keyed by muscle_role; values are
 #              muscle_groups.code and must refer to trackable (leaf) nodes.
 #
@@ -112,7 +115,9 @@ exercises:
     pattern: vertical_push
     equipment: machine
     force: push
+    load_type: dual
     default_rest_sec: 120
+    notes: Two independently loaded weight stacks; logged weight is per side.
     muscles:
       primary: [delt_front]
       secondary: [delt_side, tricep_lateral]
@@ -213,7 +218,9 @@ exercises:
     pattern: horizontal_pull
     equipment: machine
     force: pull
+    load_type: dual
     default_rest_sec: 120
+    notes: Two independently loaded weight stacks; logged weight is per side.
     muscles:
       primary: [rhomboids, traps_mid]
       secondary: [lats, biceps]
@@ -443,7 +450,9 @@ exercises:
     pattern: isolation
     equipment: cable
     force: push
+    load_type: dual
     default_rest_sec: 75
+    notes: Cable crossover station — two independently loaded weight stacks; logged weight is per side.
     muscles:
       primary: [chest_mid]
       secondary: [delt_front]
