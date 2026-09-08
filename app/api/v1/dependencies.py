@@ -12,6 +12,7 @@ from app.services.auth import AuthError, AuthService
 from app.services.body_metrics import BodyMetricsService
 from app.services.catalog import CatalogService, catalog_cache
 from app.services.email import EmailSender, get_email_sender
+from app.services.google_calendar import GoogleCalendarService
 from app.services.stats import StatsService
 from app.services.template import TemplateService
 from app.services.training import TrainingService
@@ -27,10 +28,17 @@ def get_catalog_service(
     return CatalogService(session, catalog_cache(redis))
 
 
+def get_calendar_service(
+    session: AsyncSession = Depends(get_db),
+) -> GoogleCalendarService:
+    return GoogleCalendarService(session)
+
+
 def get_training_service(
     session: AsyncSession = Depends(get_db),
+    calendar: GoogleCalendarService = Depends(get_calendar_service),
 ) -> TrainingService:
-    return TrainingService(session)
+    return TrainingService(session, calendar)
 
 
 def get_stats_service(
@@ -41,8 +49,9 @@ def get_stats_service(
 
 def get_template_service(
     session: AsyncSession = Depends(get_db),
+    calendar: GoogleCalendarService = Depends(get_calendar_service),
 ) -> TemplateService:
-    return TemplateService(session)
+    return TemplateService(session, calendar)
 
 
 def get_user_profile_service(

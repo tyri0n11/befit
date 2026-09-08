@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     # google_callback's `mobile` branch). Query string carries the token pair.
     MOBILE_APP_SCHEME: str = "befit://auth/google-callback"
 
+    # Google Calendar sync (separate, explicit opt-in — see
+    # app/services/google_calendar.py). Distinct redirect URI from
+    # GOOGLE_REDIRECT_URI: /calendar/callback is a different path and must be
+    # registered separately in the Google Cloud console.
+    GOOGLE_CALENDAR_REDIRECT_URI: str = "http://localhost:8000/api/v1/calendar/callback"
+    # Public HTTPS address Google POSTs push notifications to. Must be
+    # reachable from the internet (the Cloudflare Tunnel that already serves
+    # the API works for this — no separate inbound path needed).
+    GOOGLE_CALENDAR_WEBHOOK_URL: str = ""
+    # Shared secret sent as the watch channel's `token`; the webhook endpoint
+    # checks it against X-Goog-Channel-Token to reject spoofed calls.
+    GOOGLE_CALENDAR_WEBHOOK_TOKEN: str = ""
+
     # MCP (Model Context Protocol) — exposes the app as tools for Claude chat/cowork.
     MCP_ENABLED: bool = True
     # This API's own public origin, used as the OAuth issuer for MCP clients.
@@ -67,6 +80,16 @@ class Settings(BaseSettings):
     @property
     def GOOGLE_OAUTH_CONFIGURED(self) -> bool:
         return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+
+    @computed_field
+    @property
+    def GOOGLE_CALENDAR_CONFIGURED(self) -> bool:
+        return bool(
+            self.GOOGLE_CLIENT_ID
+            and self.GOOGLE_CLIENT_SECRET
+            and self.GOOGLE_CALENDAR_WEBHOOK_URL
+            and self.GOOGLE_CALENDAR_WEBHOOK_TOKEN
+        )
 
     @computed_field
     @property

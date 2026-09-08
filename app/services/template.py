@@ -26,6 +26,7 @@ from app.schemas.template import (
     WorkoutTemplateUpdate,
 )
 from app.schemas.training import SessionExerciseCreate, WorkoutSessionCreate
+from app.services.google_calendar import GoogleCalendarService
 from app.services.training import TrainingError, TrainingService
 
 
@@ -52,12 +53,18 @@ def _dec(value: float | None) -> Decimal | None:
 
 
 class TemplateService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        calendar: GoogleCalendarService | None = None,
+    ) -> None:
         self.repo = TemplateRepository(session)
         self.catalog = CatalogRepository(session)
         # Sessions are created through the training service so instantiating a
-        # template goes down the same validated path as a hand-built session.
-        self.training = TrainingService(session)
+        # template goes down the same validated path as a hand-built session
+        # — Calendar sync included, since a session instantiated as PLANNED
+        # is exactly the case that path is meant to sync.
+        self.training = TrainingService(session, calendar)
 
     # --- templates --------------------------------------------------------
 

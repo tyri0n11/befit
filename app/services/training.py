@@ -25,6 +25,7 @@ from app.schemas.training import (
     WorkoutSessionSummary,
     WorkoutSessionUpdate,
 )
+from app.services.google_calendar import GoogleCalendarService
 
 
 class TrainingErrorCode(enum.StrEnum):
@@ -51,10 +52,17 @@ def _dec(value: float | None) -> Decimal | None:
 
 
 class TrainingService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        calendar: GoogleCalendarService | None = None,
+    ) -> None:
         self.repo = TrainingRepository(session)
         # Exercises are catalog data; resolving them is that repository's job.
         self.catalog = CatalogRepository(session)
+        # None in tests / callers that don't care about Calendar sync — every
+        # sync call below is a no-op without it.
+        self.calendar = calendar
 
     # --- sessions ---------------------------------------------------------
 
@@ -118,6 +126,8 @@ class TrainingService:
 
         self.repo.add_session(workout)
         await self.repo.flush()
+        if self.calendar is not None:
+            await self.calendar.sync_session(user_id, workout)
         return workout
 
     async def update_session(
@@ -132,7 +142,10 @@ class TrainingService:
         await self.repo.flush()
         # `updated_at` is an `onupdate` server call, so the flush leaves it
         # expired; re-reading fills it in instead of lazy-loading mid-response.
-        return await self.get_session(user_id, session_id)
+        workout = await self.get_session(user_id, session_id)
+        if self.calendar is not None:
+            await self.calendar.sync_session(user_id, workout)
+        return workout
 
     async def delete_session(self, user_id: int, session_id: int) -> None:
         """Soft: the row stays and `restore_session` brings it back. Deleting an
@@ -140,6 +153,8 @@ class TrainingService:
         and hide that the first one was the real delete."""
         workout = await self.get_session(user_id, session_id)
         await self.repo.soft_delete_session(workout)
+        if self.calendar is not None:
+            await self.calendar.remove_session(user_id, session_id)
 
     async def restore_session(self, user_id: int, session_id: int) -> WorkoutSession:
         workout = await self.get_session(user_id, session_id, include_deleted=True)
@@ -149,11 +164,17 @@ class TrainingService:
                 f"Workout session {session_id} is not deleted",
             )
         await self.repo.restore_session(workout)
-        return await self.get_session(user_id, session_id)
+        workout = await self.get_session(user_id, session_id)
+        if self.calendar is not None:
+            # Recreates the event if the restored session is still PLANNED.
+            await self.calendar.sync_session(user_id, workout)
+        return workout
 
     async def purge_session(self, user_id: int, session_id: int) -> None:
         """Permanent, and only reachable for something already soft-deleted —
-        emptying the bin is a deliberate second step, never the first one."""
+        emptying the bin is a deliberate second step, never the first one.
+        No calendar call here: delete_session already removed the event and
+        mapping before the row could reach this point."""
         workout = await self.get_session(user_id, session_id, include_deleted=True)
         if workout.deleted_at is None:
             raise TrainingError(
