@@ -312,16 +312,29 @@ class TestWebhookEndpoint:
 
 
 class TestConnectEndpoint:
-    async def _auth_headers(self, client: AsyncClient) -> dict[str, str]:
+    """`/connect` is auth'd via an `access_token` query param, not the
+    `Authorization` header — it's meant to be opened directly in a browser
+    (expo-web-browser on the mobile side), which can't attach headers to a
+    plain navigation. See the endpoint's docstring."""
+
+    async def _access_token(self, client: AsyncClient) -> str:
         await client.post(AUTH + "/register", json=CREDENTIALS)
         login = await client.post(
             AUTH + "/login",
             json={"email": CREDENTIALS["email"], "password": CREDENTIALS["password"]},
         )
-        return {"Authorization": f"Bearer {login.json()['access_token']}"}
+        return login.json()["access_token"]
 
-    async def test_requires_authentication(self, client: AsyncClient) -> None:
+    async def test_requires_a_token(self, client: AsyncClient) -> None:
         response = await client.get(BASE + "/connect", follow_redirects=False)
+        assert response.status_code == 422
+
+    async def test_rejects_a_garbage_token(self, client: AsyncClient) -> None:
+        response = await client.get(
+            BASE + "/connect",
+            params={"access_token": "not-a-real-token"},
+            follow_redirects=False,
+        )
         assert response.status_code == 401
 
     async def test_requires_calendar_configuration(
@@ -330,10 +343,12 @@ class TestConnectEndpoint:
         monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
         monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "test-client-secret")
         monkeypatch.setattr(settings, "GOOGLE_CALENDAR_WEBHOOK_URL", "")
-        headers = await self._auth_headers(client)
+        token = await self._access_token(client)
 
         response = await client.get(
-            BASE + "/connect", headers=headers, follow_redirects=False
+            BASE + "/connect",
+            params={"access_token": token},
+            follow_redirects=False,
         )
 
         assert response.status_code == 503
@@ -347,10 +362,12 @@ class TestConnectEndpoint:
             settings, "GOOGLE_CALENDAR_WEBHOOK_URL", "https://api.example.com/webhook"
         )
         monkeypatch.setattr(settings, "GOOGLE_CALENDAR_WEBHOOK_TOKEN", "webhook-secret")
-        headers = await self._auth_headers(client)
+        token = await self._access_token(client)
 
         response = await client.get(
-            BASE + "/connect", headers=headers, follow_redirects=False
+            BASE + "/connect",
+            params={"access_token": token},
+            follow_redirects=False,
         )
 
         assert response.status_code == 307

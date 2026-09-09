@@ -10,6 +10,7 @@ from redis.asyncio import Redis
 
 from app.api.v1.dependencies import (
     CurrentUser,
+    get_auth_service,
     get_calendar_service,
     get_training_service,
 )
@@ -17,6 +18,7 @@ from app.core.redis import get_redis
 from app.core.settings import settings
 from app.schemas.calendar import CalendarStatusResponse
 from app.schemas.training import WorkoutSessionUpdate
+from app.services.auth import AuthError, AuthService
 from app.services.google_calendar import GoogleCalendarError, GoogleCalendarService
 from app.services.google_oauth import (
     GoogleOAuthError,
@@ -53,8 +55,25 @@ async def calendar_status(
     summary="Redirect to Google consent for Calendar access",
 )
 async def connect(
-    user: CurrentUser, redis: Redis = Depends(get_redis)
+    access_token: str,
+    redis: Redis = Depends(get_redis),
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> RedirectResponse:
+    """Auth via a query-param access token rather than `CurrentUser`
+    (`Authorization` header): this endpoint is meant to be opened directly in
+    a browser (`expo-web-browser`'s `openAuthSessionAsync` on the mobile side
+    — see befit-mobile's CalendarService), which cannot attach a header to a
+    plain navigation. Scoped to this endpoint only; every other authenticated
+    route still requires the header. The token is short-lived
+    (`ACCESS_TOKEN_EXPIRE_MINUTES`), same exposure window a URL-based OAuth
+    `code` already has."""
+    try:
+        user = await auth_service.user_from_access_token(access_token)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message
+        ) from exc
+
     try:
         url, _state = await start_calendar_connect(redis, user.id)
     except GoogleOAuthError as exc:
@@ -101,10 +120,13 @@ async def callback(
         ) from exc
 
     # Calendar connect is always initiated from the app, unlike
-    # /auth/google/callback which also serves a browser client directly —
-    # no JSON branch needed here.
+    # /auth/google/callback which also serves a browser client directly — no
+    # JSON branch needed here. Shares the login flow's deep link
+    # (MOBILE_APP_SCHEME) but marks it with ?calendar=connected so
+    # GoogleCallbackScreen can tell the two apart without touching tokens.
     return RedirectResponse(
-        settings.MOBILE_APP_SCHEME, status_code=status.HTTP_302_FOUND
+        f"{settings.MOBILE_APP_SCHEME}?calendar=connected",
+        status_code=status.HTTP_302_FOUND,
     )
 
 
